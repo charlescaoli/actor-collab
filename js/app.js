@@ -26,7 +26,7 @@ const bannerBio     = document.getElementById('bannerBio');
 const backBtn       = document.getElementById('backBtn');
 const graphToggleBtn = document.getElementById('graphToggleBtn');
 const graphContainer = document.getElementById('graphContainer');
-const graphCanvas   = document.getElementById('graphCanvas');
+const graphGalleryScroll = document.getElementById('graphGalleryScroll');
 const loadingSection = document.getElementById('loadingSection');
 const loadingText   = document.getElementById('loadingText');
 const progressFill  = document.getElementById('progressFill');
@@ -540,165 +540,42 @@ graphToggleBtn.addEventListener('click', () => {
     graphContainer.classList.add('show');
     graphToggleBtn.textContent = '📋 列表';
     graphToggleBtn.classList.add('active');
-    initRingGraph();
+    renderGraphGallery();
   }
 });
 
-// ── Concentric Ring Graph ─────────────────────
-let ringCtx, ringW, ringH, ringRunning = false, ringNodes = [], ringLinks = [], ringCenter;
-let hoveredNode = null, ringTime = 0, ringPhase = 0;
-
-function initRingGraph() {
-  ringCtx = graphCanvas.getContext('2d');
-  const rect = graphContainer.getBoundingClientRect();
-  const dpr = devicePixelRatio || 1;
-  graphCanvas.width = rect.width * dpr;
-  graphCanvas.height = 460 * dpr;
-  graphCanvas.style.width = rect.width + 'px';
-  graphCanvas.style.height = '460px';
-  ringW = rect.width; ringH = 460;
-  ringCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  buildRingData();
-  if (!ringRunning) runRingAnim();
-}
-
-function buildRingData() {
-  ringNodes = []; ringLinks = [];
+// ── Graph Gallery (horizontal scroll) ──────────
+function renderGraphGallery() {
   if (!currentCollabs || !currentCollabs.length) return;
-  ringCenter = { name: bannerName.textContent };
-  const top = currentCollabs.slice(0, 20);
-  const rings = [
-    { nodes: top.filter(c => c.count >= 8), r: 95, dotMax: 7 },
-    { nodes: top.filter(c => c.count >= 4 && c.count < 8), r: 155, dotMax: 5 },
-    { nodes: top.filter(c => c.count < 4), r: 210, dotMax: 4 }
-  ];
-  rings.forEach(ring => {
-    ring.nodes.forEach((c, i) => {
-      ringNodes.push({
-        name: c.name, id: c.id, count: c.count,
-        angle: (i / Math.max(1, ring.nodes.length)) * Math.PI * 2 + ring.r * 0.01,
-        ringR: ring.r, dotR: ring.dotMax, phase: Math.random() * Math.PI * 2
+  const name = bannerName.textContent;
+  const top30 = currentCollabs.slice(0, 30);
+  graphGalleryScroll.innerHTML = top30.map(c => `
+    <div class="graph-gallery-card" data-actor-id="${c.id}" data-actor-name="${esc(c.name)}" data-actor-profile="${c.profile_path || ''}">
+      ${c.profile_path
+        ? `<img class="gg-avatar" src="${profileUrl(c.profile_path, 'w185')}" alt="${esc(c.name)}" loading="lazy">`
+        : `<div class="gg-no-avatar">🎬</div>`
+      }
+      <div class="gg-name">${esc(c.name)}</div>
+      <div class="gg-count" style="color:${c.count >= 8 ? '#f5c518' : '#888'}">合作 ${c.count} 次</div>
+    </div>
+  `).join('');
+
+  graphGalleryScroll.querySelectorAll('.graph-gallery-card').forEach(card => {
+    card.addEventListener('click', () => {
+      graphContainer.classList.remove('show');
+      collabSection.classList.add('show');
+      graphToggleBtn.textContent = '🔗 关系图';
+      graphToggleBtn.classList.remove('active');
+      selectActor({
+        id: parseInt(card.dataset.actorId),
+        name: card.dataset.actorName,
+        profile_path: card.dataset.actorProfile,
+        known_for_department: ''
       });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   });
-  // Co-star links for strong collaborators
-  const strong = top.filter(c => c.count >= 5);
-  for (let i = 0; i < strong.length; i++) {
-    for (let j = i + 1; j < strong.length; j++) {
-      const a = strong[i], b = strong[j];
-      const shared = [...(a.sharedWorks?.keys()||[])].filter(k => b.sharedWorks?.has(k));
-      if (shared.length) ringLinks.push({ a: a.name, b: b.name, w: shared.length });
-    }
-  }
 }
-
-function runRingAnim() {
-  ringRunning = true;
-  function step(ts) {
-    if (!graphContainer.classList.contains('show')) { ringRunning = false; return; }
-    ringTime = ts * 0.001;
-    drawRings();
-    requestAnimationFrame(step);
-  }
-  requestAnimationFrame(step);
-}
-
-function drawRings() {
-  const ctx = ringCtx, cx = ringW / 2, cy = ringH / 2;
-  ctx.fillStyle = '#0a0a0f'; ctx.fillRect(0, 0, ringW, ringH);
-
-  // Rings
-  [95, 155, 210].forEach(r => {
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.setLineDash([3, 6]); ctx.stroke(); ctx.setLineDash([]);
-  });
-
-  // Co-star links
-  ringLinks.forEach(l => {
-    const a = ringNodes.find(n => n.name === l.a);
-    const b = ringNodes.find(n => n.name === l.b);
-    if (!a || !b) return;
-    const wo = Math.sin(ringTime * 0.7 + a.phase) * 4;
-    const ax = cx + Math.cos(a.angle + wo * 0.015) * (a.ringR + wo);
-    const ay = cy + Math.sin(a.angle + wo * 0.015) * (a.ringR + wo);
-    const wo2 = Math.sin(ringTime * 0.7 + b.phase) * 4;
-    const bx = cx + Math.cos(b.angle + wo2 * 0.015) * (b.ringR + wo2);
-    const by = cy + Math.sin(b.angle + wo2 * 0.015) * (b.ringR + wo2);
-    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
-    const hl = hoveredNode && (hoveredNode.name === a.name || hoveredNode.name === b.name);
-    ctx.strokeStyle = hl ? `rgba(245,197,24,0.4)` : `rgba(150,150,190,0.1)`;
-    ctx.lineWidth = hl ? 0.8 : 0.3; ctx.stroke();
-  });
-
-  // Nodes
-  ringNodes.forEach(n => {
-    const wo = Math.sin(ringTime * 0.7 + n.phase) * 4;
-    const nx = cx + Math.cos(n.angle + wo * 0.015) * (n.ringR + wo);
-    const ny = cy + Math.sin(n.angle + wo * 0.015) * (n.ringR + wo);
-    const hl = hoveredNode && hoveredNode.name === n.name;
-    const fd = hoveredNode && !hl;
-
-    // Link to center
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(nx, ny);
-    ctx.strokeStyle = hl ? `rgba(245,197,24,0.5)` : (fd ? 'rgba(200,200,220,0.04)' : `rgba(200,200,220,0.12)`);
-    ctx.lineWidth = hl ? 1.5 : Math.max(0.3, n.count * 0.12); ctx.stroke();
-
-    // Dot
-    const r = hl ? n.dotR * 1.6 : (fd ? n.dotR * 0.5 : n.dotR);
-    ctx.beginPath(); ctx.arc(nx, ny, r, 0, Math.PI * 2);
-    ctx.fillStyle = n.count >= 8 ? '#f5c518' : (hl ? '#f5c518' : (fd ? 'rgba(80,80,110,0.25)' : `rgba(200,210,230,${0.4 + n.count * 0.05})`));
-    ctx.fill();
-    ctx.strokeStyle = hl ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.06)';
-    ctx.lineWidth = hl ? 1 : 0.5; ctx.stroke();
-
-    if (hl) {
-      ctx.fillStyle = '#f5c518'; ctx.font = 'bold 9px -apple-system,sans-serif'; ctx.textAlign = 'center';
-      ctx.fillText(n.name, nx, ny - r - 7);
-      ctx.fillStyle = '#999'; ctx.font = '7.5px -apple-system,sans-serif';
-      ctx.fillText('合作' + n.count + '次', nx, ny - r - 19);
-    }
-  });
-
-  // Center
-  const pulse = 14 + Math.sin(ringTime * 1.5) * 3;
-  for (let g = 3; g >= 1; g--) {
-    const gr = ctx.createRadialGradient(cx, cy, pulse * 0.3, cx, cy, pulse * g * 2.5);
-    gr.addColorStop(0, `rgba(245,197,24,${0.6/g})`); gr.addColorStop(1, 'rgba(245,197,24,0)');
-    ctx.beginPath(); ctx.arc(cx, cy, pulse * g * 2.5, 0, Math.PI * 2); ctx.fillStyle = gr; ctx.fill();
-  }
-  ctx.beginPath(); ctx.arc(cx, cy, pulse, 0, Math.PI * 2);
-  ctx.fillStyle = '#f5c518'; ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2; ctx.stroke();
-  ctx.fillStyle = '#0a0a0f'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText(ringCenter.name, cx, cy + 3);
-  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = '8px sans-serif';
-  ctx.fillText('合作圈', cx, 20);
-}
-
-graphCanvas.addEventListener('mousemove', e => {
-  const rect = graphCanvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-  const cx = ringW / 2, cy = ringH / 2;
-  hoveredNode = null;
-  for (const n of ringNodes) {
-    const wo = Math.sin(ringTime * 0.7 + n.phase) * 4;
-    const nx = cx + Math.cos(n.angle + wo * 0.015) * (n.ringR + wo);
-    const ny = cy + Math.sin(n.angle + wo * 0.015) * (n.ringR + wo);
-    if ((mx - nx) ** 2 + (my - ny) ** 2 < (n.dotR + 8) ** 2) { hoveredNode = n; break; }
-  }
-  graphCanvas.style.cursor = hoveredNode ? 'pointer' : 'default';
-});
-
-graphCanvas.addEventListener('click', () => {
-  if (hoveredNode && hoveredNode.id) {
-    graphContainer.classList.remove('show'); collabSection.classList.add('show');
-    graphToggleBtn.textContent = '🔗 关系图'; graphToggleBtn.classList.remove('active');
-    selectActor({ id: hoveredNode.id, name: hoveredNode.name, profile_path: '', known_for_department: '' });
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-});
-
-graphCanvas.addEventListener('mouseleave', () => { hoveredNode = null; });
 
 // ── fmtMoney ──────────────────────────────────
 function fmtMoney(n) {
