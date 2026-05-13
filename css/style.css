@@ -87,7 +87,7 @@ body::after {
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   transition: border-color 0.2s, color 0.2s, background 0.2s, box-shadow 0.2s;
 }
-.suggestion-chip:hover { border-color: var(--accent); color: var(--accent); background: rgba(245,197,24,0.08); box-shadow: 0 0 12px var(--accent-glow); }
+.suggestion-chip:hover, .suggestion-chip:focus-visible { border-color: var(--accent); color: var(--accent); background: rgba(245,197,24,0.08); box-shadow: 0 0 12px var(--accent-glow); outline: none; }
 
 /* Search Results */
 .search-results {
@@ -184,7 +184,7 @@ body::after {
 .collab-card .meta { padding: 10px 12px 6px; }
 .collab-card .meta h4 { font-size: 0.84rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .collab-card .meta .count { font-size: 0.72rem; color: var(--accent); font-weight: 600; margin-top: 1px; }
-.collab-card .shared-movies { padding: 0 12px 10px; display: flex; flex-direction: column; gap: 3px; }
+.collab-card .shared-movies { padding: 0 12px 10px; display: flex; flex-direction: column; gap: 6px; }
 .shared-movie-line { display: flex; align-items: center; gap: 5px; font-size: 0.68rem; color: #888; }
 .shared-movie-line .sm-year { color: #555; font-size: 0.64rem; }
 .shared-movie-line .sm-revenue { color: var(--accent); font-size: 0.64rem; margin-left: auto; }
@@ -264,7 +264,7 @@ body::after {
 .modal-cast-scroll { display: flex; gap: 14px; overflow-x: auto; padding-bottom: 6px; }
 .modal-cast-scroll::-webkit-scrollbar { height: 3px; }
 .modal-cast-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
-.modal-cast-item { flex-shrink: 0; width: 72px; cursor: pointer; text-align: center; }
+.modal-cast-item { flex-shrink: 0; width: 72px; cursor: pointer; text-align: center; background: none; border: none; padding: 0; font: inherit; color: inherit; }
 .modal-cast-item .cast-img { width: 72px; height: 108px; border-radius: 3px; background: #2a2a2a; object-fit: cover; }
 .modal-cast-item .cast-no-img { width: 72px; height: 108px; border-radius: 3px; background: #2a2a2a; display: flex; align-items: center; justify-content: center; color: #555; font-size: 1.3rem; }
 .modal-cast-item .cast-name { font-size: 0.72rem; font-weight: 500; color: #ddd; line-height: 1.2; margin-top: 4px; }

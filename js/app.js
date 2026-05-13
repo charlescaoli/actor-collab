@@ -188,9 +188,17 @@ class ForceGraph {
     ctx.restore();
 
     if (highlighted) {
-      ctx.shadowColor = 'rgba(245,197,24,0.7)'; ctx.shadowBlur = 12;
-      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.stroke();
-      ctx.shadowBlur = 0;
+      // Tooltip above node
+      const tipW = 120, tipH = 40, tipX = x - tipW/2, tipY = y - r - tipH - 10;
+      if (tipX < 4) { /* clamp left */ } // skip clamp for simplicity
+      ctx.fillStyle = 'rgba(20,20,35,0.92)';
+      ctx.beginPath(); ctx.roundRect(tipX, tipY, tipW, tipH, 6); ctx.fill();
+      ctx.strokeStyle = 'rgba(245,197,24,0.4)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(tipX, tipY, tipW, tipH, 6); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 8px -apple-system, sans-serif';
+      ctx.textAlign = 'center'; ctx.fillText(n.name, x, tipY + 14);
+      ctx.fillStyle = '#f5c518'; ctx.font = '7px -apple-system, sans-serif';
+      ctx.fillText(`合作 ${n.count} 次`, x, tipY + 28);
     }
 
     // Count below avatar
@@ -477,7 +485,7 @@ async function openMovieDetail(type,id){
     modalMetaBar.innerHTML=[year,runtime,genres,rating].filter(Boolean).map(s=>`<span>${s}</span>`).join('');
     modalOverview.textContent=details.overview||'暂无简介';
     const topCast=(credits||[]).slice(0,30);
-    modalCast.innerHTML=topCast.map(c=>`<div class="modal-cast-item" data-person-id="${c.id}" data-person-name="${esc(c.name)}" data-person-profile="${c.profile_path||''}">${c.profile_path?`<img class="cast-img" src="${profileUrl(c.profile_path)}" alt="${esc(c.name)}" loading="lazy">`:`<div class="cast-no-img">🎬</div>`}<div class="cast-name">${esc(c.name)}</div>${c.character?`<div class="cast-char">${esc(c.character)}</div>`:''}</div>`).join('');
+    modalCast.innerHTML=topCast.map(c=>`<button class="modal-cast-item" data-person-id="${c.id}" data-person-name="${esc(c.name)}" data-person-profile="${c.profile_path||''}">${c.profile_path?`<img class="cast-img" src="${profileUrl(c.profile_path)}" alt="${esc(c.name)}" loading="lazy">`:`<div class="cast-no-img">🎬</div>`}<div class="cast-name">${esc(c.name)}</div>${c.character?`<div class="cast-char">${esc(c.character)}</div>`:''}</button>`).join('');
     modalCast.querySelectorAll('.modal-cast-item').forEach(chip=>{addClickable(chip,()=>{const pid=parseInt(chip.dataset.personId),pname=chip.dataset.personName,pprofile=chip.dataset.personProfile;closeModal();selectActor({id:pid,name:pname,profile_path:pprofile,known_for_department:''});});});
   }catch(err){modalCast.innerHTML='<div class="modal-loading">加载失败</div>';showToast('加载电影详情失败');}
 }
