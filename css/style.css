@@ -190,9 +190,11 @@ body::after {
 .shared-movie-line .sm-revenue { color: var(--accent); font-size: 0.64rem; margin-left: auto; }
 .shared-movie-line img { width: 24px; height: 36px; border-radius: 2px; object-fit: cover; cursor: pointer; flex-shrink: 0; }
 
-/* shared movie thumb placeholders in collab cards */
+/* shared movie rows in collab cards */
 .shared-movie-thumb { width: 24px; height: 36px; border-radius: 2px; object-fit: cover; cursor: pointer; flex-shrink: 0; }
-.shared-movie-thumb-placeholder { font-size: 0.62rem; color: #666; }
+.shared-movie-row { display: flex; align-items: center; gap: 5px; }
+.shared-movie-title { font-size: 0.66rem; color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 70px; }
+.shared-movie-thumb-placeholder { width: 24px; height: 36px; border-radius: 2px; background: rgba(255,255,255,0.04); display: flex; align-items: center; justify-content: center; font-size: 0.5rem; color: #555; cursor: pointer; flex-shrink: 0; }
 
 /* Error */
 .error-toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: #e63946; color: #fff; padding: 10px 24px; border-radius: 8px; font-size: 0.82rem; font-weight: 500; box-shadow: 0 4px 16px rgba(230,57,70,0.35); z-index: 1000; display: none; }

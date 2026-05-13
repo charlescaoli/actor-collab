@@ -43,10 +43,18 @@ class ForceGraph {
 
     const sorted = [...collabs].sort((a, b) => b.count - a.count).slice(0, 30);
     const maxCount = Math.max(...sorted.map(c => c.count), 1);
-    this.nodes = sorted.map(c => ({
-      id: c.id, name: c.name, count: c.count, sharedWorks: c.sharedWorks,
-      radius: 5 + (c.count / maxCount) * 10, x: 0, y: 0, vx: 0, vy: 0
-    }));
+    this.nodes = sorted.map(c => {
+      const n = {
+        id: c.id, name: c.name, count: c.count, sharedWorks: c.sharedWorks,
+        radius: 14, x: 0, y: 0, vx: 0, vy: 0, img: null
+      };
+      if (c.profile_path) {
+        n.img = new Image();
+        n.img.crossOrigin = 'anonymous';
+        n.img.src = profileUrl(c.profile_path, 'w92');
+      }
+      return n;
+    });
 
     this.canvas = document.createElement('canvas');
     this.ctx = this.canvas.getContext('2d');
@@ -101,7 +109,7 @@ class ForceGraph {
         if (a === this.dragging || b === this.dragging) continue;
         const dx = b.x - a.x, dy = b.y - a.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const minD = a.radius + b.radius + 12;
+        const minD = 14 + 14 + 12;
         if (dist < minD) {
           const f = (minD - dist) * 0.5, nx = dx / dist, ny = dy / dist;
           a.vx -= nx * f * 0.5; a.vy -= ny * f * 0.5;
@@ -117,8 +125,8 @@ class ForceGraph {
       if (n === this.dragging) continue;
       n.vx *= damping; n.vy *= damping;
       n.x += n.vx; n.y += n.vy;
-      n.x = Math.max(n.radius, Math.min(this.w - n.radius, n.x));
-      n.y = Math.max(n.radius, Math.min(this.h - n.radius, n.y));
+      n.x = Math.max(14, Math.min(this.w - 14, n.x));
+      n.y = Math.max(14, Math.min(this.h - 14, n.y));
     }
 
     this.draw(); this.frameCount++;
@@ -130,16 +138,16 @@ class ForceGraph {
   draw() {
     const { ctx, w, h, center, nodes, hovered } = this;
     ctx.clearRect(0, 0, w, h);
-    const mc = Math.max(...nodes.map(n => n.count), 1);
 
+    // Thin uniform lines
     for (const n of nodes) {
       ctx.beginPath();
       ctx.moveTo(center.x, center.y); ctx.lineTo(n.x, n.y);
-      ctx.strokeStyle = `rgba(245,197,24,${0.1 + (n.count/mc)*0.3})`;
-      ctx.lineWidth = 0.4 + (n.count/mc)*1.6;
+      ctx.strokeStyle = 'rgba(245,197,24,0.2)';
+      ctx.lineWidth = 0.5;
       ctx.stroke();
     }
-    for (const n of nodes) this.drawNode(n.x, n.y, n.radius, n.name, n === hovered, n.count, mc);
+    for (const n of nodes) this.drawNode(n, n === hovered);
     this.drawCenter(center.x, center.y);
   }
 
@@ -154,25 +162,54 @@ class ForceGraph {
     ctx.fillText(this.centerName.slice(0, 8), x, y - 24);
   }
 
-  drawNode(x, y, r, name, highlighted, count, maxCount) {
+  drawNode(n, highlighted) {
     const { ctx } = this;
-    ctx.beginPath(); ctx.arc(x, y, highlighted ? r*1.2 : r, 0, Math.PI*2);
-    if (highlighted) { ctx.fillStyle = '#f5c518'; ctx.shadowColor = 'rgba(245,197,24,0.7)'; }
-    else if (count >= maxCount*0.5) { ctx.fillStyle = '#f0d060'; ctx.shadowColor = 'rgba(245,197,24,0.4)'; }
-    else { ctx.fillStyle = 'rgba(210,215,235,0.85)'; ctx.shadowColor = 'rgba(210,215,235,0.3)'; }
-    ctx.shadowBlur = highlighted ? 14 : 6; ctx.fill(); ctx.shadowBlur = 0;
-    if (highlighted || r >= 10) {
-      ctx.fillStyle = highlighted ? '#f5c518' : '#aaa';
-      ctx.font = `${highlighted ? '9' : '7.5'}px -apple-system, sans-serif`;
-      ctx.textAlign = 'center'; ctx.fillText(name.slice(0, 6), x, y - r - 5);
+    const x = n.x, y = n.y, r = highlighted ? 16 : 14;
+
+    // Avatar circle clip
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+
+    if (n.img && n.img.complete && n.img.naturalWidth > 0) {
+      ctx.drawImage(n.img, x - r, y - r, r * 2, r * 2);
+    } else {
+      ctx.fillStyle = highlighted ? '#f5c518' : 'rgba(210,215,235,0.85)';
+      ctx.fill();
     }
+    // Border ring
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = highlighted ? '#f5c518' : 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = highlighted ? 2 : 1;
+    ctx.stroke();
+    ctx.restore();
+
+    if (highlighted) {
+      ctx.shadowColor = 'rgba(245,197,24,0.7)'; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // Name below
+    ctx.fillStyle = highlighted ? '#f5c518' : '#ccc';
+    ctx.font = `${highlighted ? 9 : 8}px -apple-system, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(n.name.slice(0, 5), x, y + r + 12);
+
+    // Count below name
+    ctx.fillStyle = highlighted ? '#f5c518' : '#888';
+    ctx.font = `${highlighted ? 8 : 7}px -apple-system, sans-serif`;
+    ctx.fillText(`合作${n.count}次`, x, y + r + 24);
   }
 
   getPos(e) { const r = this.canvas.getBoundingClientRect(); return { x: (e.clientX-r.left)/this.scale, y: (e.clientY-r.top)/this.scale }; }
 
   hitTest(px, py) {
     if (Math.hypot(px-this.center.x, py-this.center.y) < 20) return { type: 'center' };
-    for (const n of this.nodes) { if (Math.hypot(px-n.x, py-n.y) < n.radius+5) return { type: 'actor', node: n }; }
+    for (const n of this.nodes) { if (Math.hypot(px-n.x, py-n.y) < 16+5) return { type: 'actor', node: n }; }
     return null;
   }
 
@@ -402,7 +439,7 @@ function renderCollaborations(collabs, actorName) {
   collabTitle.innerHTML=`与 <strong>「${esc(actorName)}」</strong> 合作过的演员 · ${collabs.length} 人`;
   collabs.forEach(c=>{
     const card=document.createElement('div'); card.className='collab-card';
-    const sh=c.sharedWorks.map(w=>w.poster_path?`<img class="shared-movie-thumb" src="${posterUrl(w.poster_path,'w92')}" alt="${esc(w.title)}" title="${esc(w.title)}" loading="lazy" data-movie-type="${w.type}" data-movie-id="${w.id}">`:`<div class="shared-movie-thumb-placeholder" title="${esc(w.title)}" data-movie-type="${w.type}" data-movie-id="${w.id}" style="cursor:pointer">${esc(w.title.slice(0,4))}</div>`).join('');
+    const sh=c.sharedWorks.map(w=>`<div class="shared-movie-row">${w.poster_path?`<img class="shared-movie-thumb" src="${posterUrl(w.poster_path,'w92')}" alt="${esc(w.title)}" title="${esc(w.title)}" loading="lazy" data-movie-type="${w.type}" data-movie-id="${w.id}">`:`<div class="shared-movie-thumb-placeholder" data-movie-type="${w.type}" data-movie-id="${w.id}">🎬</div>`}<span class="shared-movie-title">${esc(w.title.slice(0,8))}</span></div>`).join('');
     card.innerHTML=`${c.profile_path?`<img class="avatar" src="${profileUrl(c.profile_path,'w185')}" alt="${esc(c.name)}" loading="lazy">`:`<div class="no-avatar-card">🎬</div>`}<div class="meta"><h4>${esc(c.name)}</h4><span class="count">合作 ${c.count} 次</span></div><div class="shared-movies">${sh}</div>`;
     addClickable(card,()=>{selectActor({id:c.id,name:c.name,profile_path:c.profile_path,known_for_department:''});window.scrollTo({top:0,behavior:'smooth'});});
     collabGrid.appendChild(card);
