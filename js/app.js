@@ -305,7 +305,7 @@ function renderSearchResults(results) {
     const div = document.createElement('div'); div.className = 'search-result-item';
     const kf = (person.known_for||[]).slice(0,3).map(m=>m.title||m.name).join(', ');
     div.innerHTML = `${person.profile_path?`<img src="${profileUrl(person.profile_path)}" alt="" loading="lazy">`:`<div class="no-avatar">🎬</div>`}<div class="info"><h3>${esc(person.name)}</h3><span>${person.known_for_department||''}${kf?' · '+kf:''}</span></div>`;
-    div.addEventListener('click', ()=>selectActor(person));
+    addClickable(div, ()=>selectActor(person));
     searchResults.appendChild(div);
   });
   searchResults.classList.add('show');
@@ -329,7 +329,7 @@ async function selectActor(person) {
   bannerTopMovies.innerHTML = ''; actorBanner.classList.add('show'); landingState.style.display = 'none';
   collabSection.classList.remove('show'); graphContainer.classList.remove('show');
   graphToggleBtn.classList.remove('active'); graphToggleBtn.textContent = '🔗 关系图';
-  loadingSection.classList.add('show'); loadingText.textContent = '正在加载作品列表...'; progressFill.style.width = '0%';
+  loadingSection.classList.add('show'); loadingText.textContent = '正在加载作品列表…'; progressFill.style.width = '0%';
 
   try {
     const [details, movieCredits, tvCredits] = await Promise.all([
@@ -404,7 +404,7 @@ function renderCollaborations(collabs, actorName) {
     const card=document.createElement('div'); card.className='collab-card';
     const sh=c.sharedWorks.map(w=>w.poster_path?`<img class="shared-movie-thumb" src="${posterUrl(w.poster_path,'w92')}" alt="${esc(w.title)}" title="${esc(w.title)}" loading="lazy" data-movie-type="${w.type}" data-movie-id="${w.id}">`:`<div class="shared-movie-thumb-placeholder" title="${esc(w.title)}" data-movie-type="${w.type}" data-movie-id="${w.id}" style="cursor:pointer">${esc(w.title.slice(0,4))}</div>`).join('');
     card.innerHTML=`${c.profile_path?`<img class="avatar" src="${profileUrl(c.profile_path,'w185')}" alt="${esc(c.name)}" loading="lazy">`:`<div class="no-avatar-card">🎬</div>`}<div class="meta"><h4>${esc(c.name)}</h4><span class="count">合作 ${c.count} 次</span></div><div class="shared-movies">${sh}</div>`;
-    card.addEventListener('click',()=>{selectActor({id:c.id,name:c.name,profile_path:c.profile_path,known_for_department:''});window.scrollTo({top:0,behavior:'smooth'});});
+    addClickable(card,()=>{selectActor({id:c.id,name:c.name,profile_path:c.profile_path,known_for_department:''});window.scrollTo({top:0,behavior:'smooth'});});
     collabGrid.appendChild(card);
   });
   collabSection.classList.add('show');
@@ -434,7 +434,7 @@ function closeModal(){movieModal.classList.remove('show');document.body.style.ov
 async function openMovieDetail(type,id){
   movieModal.classList.add('show');document.body.style.overflow='hidden';
   modalHero.style.backgroundImage='';modalPoster.src='';modalTitle.textContent='加载中...';modalMetaBar.innerHTML='';
-  modalOverview.textContent='';modalCast.innerHTML='<div class="modal-loading">正在加载...</div>';
+  modalOverview.textContent='';modalCast.innerHTML='<div class="modal-loading">正在加载…</div>';
   try{
     const [details,credits]=await Promise.all([type==='movie'?getMovieDetails(id):getTVDetails(id),(async()=>{const ck=`${type}-${id}`;if(creditsCache.has(ck))return creditsCache.get(ck);const cast=type==='movie'?await getMovieCredits(id):await getTVCredits(id);creditsCache.set(ck,cast);return cast;})()]);
     if(details.backdrop_path) modalHero.style.backgroundImage=`url(${backdropUrl(details.backdrop_path)})`;
@@ -446,13 +446,20 @@ async function openMovieDetail(type,id){
     modalOverview.textContent=details.overview||'暂无简介';
     const topCast=(credits||[]).slice(0,30);
     modalCast.innerHTML=topCast.map(c=>`<div class="modal-cast-item" data-person-id="${c.id}" data-person-name="${esc(c.name)}" data-person-profile="${c.profile_path||''}">${c.profile_path?`<img class="cast-img" src="${profileUrl(c.profile_path)}" alt="${esc(c.name)}" loading="lazy">`:`<div class="cast-no-img">🎬</div>`}<div class="cast-name">${esc(c.name)}</div>${c.character?`<div class="cast-char">${esc(c.character)}</div>`:''}</div>`).join('');
-    modalCast.querySelectorAll('.modal-cast-item').forEach(chip=>{chip.addEventListener('click',()=>{const pid=parseInt(chip.dataset.personId),pname=chip.dataset.personName,pprofile=chip.dataset.personProfile;closeModal();selectActor({id:pid,name:pname,profile_path:pprofile,known_for_department:''});});});
+    modalCast.querySelectorAll('.modal-cast-item').forEach(chip=>{addClickable(chip,()=>{const pid=parseInt(chip.dataset.personId),pname=chip.dataset.personName,pprofile=chip.dataset.personProfile;closeModal();selectActor({id:pid,name:pname,profile_path:pprofile,known_for_department:''});});});
   }catch(err){modalCast.innerHTML='<div class="modal-loading">加载失败</div>';showToast('加载电影详情失败');}
 }
 
 // Utils
 function esc(str){const d=document.createElement('div');d.textContent=str;return d.innerHTML;}
 function fmtMoney(n){if(n>=1e9)return(n/1e9).toFixed(1)+'B';if(n>=1e6)return(n/1e6).toFixed(0)+'M';return n.toString();}
+
+function addClickable(el, handler) {
+  el.addEventListener('click', handler);
+  el.setAttribute('tabindex', '0');
+  el.setAttribute('role', 'button');
+  el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(e); } });
+}
 
 function resetApiKey(){
   localStorage.removeItem('tmdb_api_key');setApiKey('');

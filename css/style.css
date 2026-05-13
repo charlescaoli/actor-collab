@@ -12,6 +12,12 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
   background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.5; overflow-x: hidden;
@@ -78,7 +84,8 @@ body::after {
 .suggestion-chip {
   padding: 6px 16px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
   border-radius: 20px; font-size: 0.8rem; cursor: pointer; color: var(--text-secondary);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: all 0.2s;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  transition: border-color 0.2s, color 0.2s, background 0.2s, box-shadow 0.2s;
 }
 .suggestion-chip:hover { border-color: var(--accent); color: var(--accent); background: rgba(245,197,24,0.08); box-shadow: 0 0 12px var(--accent-glow); }
 
@@ -128,7 +135,8 @@ body::after {
 .back-btn, .graph-btn {
   padding: 7px 14px; background: rgba(255,255,255,0.04); border: 1px solid var(--border);
   border-radius: 8px; font-size: 0.8rem; cursor: pointer; color: var(--text-secondary);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); transition: all 0.2s; white-space: nowrap;
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  transition: background 0.2s, color 0.2s; white-space: nowrap;
 }
 .back-btn:hover, .graph-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
 .graph-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(245,197,24,0.08); }
@@ -151,6 +159,7 @@ body::after {
   display: none; margin-bottom: 20px; border-radius: var(--radius); border: 1px solid var(--border);
   overflow: hidden; position: relative; background: radial-gradient(ellipse at center, #14141e 0%, #0a0a0f 100%);
   height: 460px; cursor: grab; user-select: none; -webkit-user-select: none;
+  touch-action: manipulation;
 }
 .graph-container.show { display: block; }
 .graph-container canvas { width: 100%; height: 100%; display: block; }
@@ -210,7 +219,7 @@ body::after {
 .modal-overlay.show { display: flex; }
 .modal-card {
   background: #1a1a1a; width: 100%; max-width: 720px; max-height: 90vh;
-  overflow-y: auto; border-radius: 6px; animation: slideUp 0.2s ease;
+  overflow-y: auto; overscroll-behavior: contain; border-radius: 6px; animation: slideUp 0.2s ease;
 }
 @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 

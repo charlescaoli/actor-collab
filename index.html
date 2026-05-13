@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" style="color-scheme:dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0a0a0f">
 <title>Actor Collab</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -17,13 +18,15 @@
     <h2>需要 TMDB API Key</h2>
     <p>本应用使用 <a href="https://www.themoviedb.org/settings/api" target="_blank">TMDB API</a></p>
     <div class="api-key-input">
-      <input type="text" id="apiKeyInput" placeholder="粘贴你的 TMDB API Key...">
+      <label for="apiKeyInput" class="sr-only">TMDB API Key</label>
+      <input type="text" id="apiKeyInput" placeholder="粘贴你的 TMDB API Key…" autocomplete="off">
       <button class="btn" id="saveApiKey">保存</button>
     </div>
   </div>
 
   <div class="search-wrapper" id="searchWrapper" style="display:none">
-    <input type="text" class="search-input" id="searchInput" placeholder="输入演员名字... 例如：梁朝伟、Tom Hanks" autocomplete="off">
+    <label for="searchInput" class="sr-only">搜索演员</label>
+    <input type="search" class="search-input" id="searchInput" placeholder="输入演员名字… 例如：梁朝伟、Tom Hanks" autocomplete="off">
     <div class="search-spinner" id="searchSpinner"></div>
   </div>
 
@@ -40,10 +43,10 @@
     <p>搜索演员，发现他们的合作圈子</p>
   </div>
 
-  <div class="search-results" id="searchResults"></div>
+  <div class="search-results" id="searchResults" role="listbox" aria-label="搜索结果"></div>
 
   <div class="actor-banner" id="actorBanner">
-    <img class="avatar" id="bannerAvatar" src="" alt="">
+    <img class="avatar" id="bannerAvatar" src="" alt="" width="100" height="150">
     <div class="info">
       <h2 id="bannerName"></h2>
       <p class="bio" id="bannerDetails"></p>
@@ -57,7 +60,7 @@
   </div>
 
   <div class="loading-section" id="loadingSection">
-    <p class="loading-text" id="loadingText">正在加载作品列表...</p>
+    <p class="loading-text" id="loadingText">正在加载作品列表…</p>
     <div class="progress-bar"><div class="progress-bar-fill" id="progressFill"></div></div>
   </div>
 
@@ -68,12 +71,12 @@
     <div class="collab-grid" id="collabGrid"></div>
   </div>
 
-  <div class="error-toast" id="errorToast"></div>
+  <div class="error-toast" id="errorToast" role="alert" aria-live="assertive"></div>
 
   <div class="modal-overlay" id="movieModal">
     <div class="modal-card">
       <div class="modal-hero" id="modalHero">
-        <button class="modal-close" id="modalClose">&times;</button>
+        <button class="modal-close" id="modalClose" aria-label="关闭">&times;</button>
       </div>
       <div class="modal-body-wrap">
         <div class="modal-top">
