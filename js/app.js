@@ -182,7 +182,7 @@ class ForceGraph {
     // Border ring
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.strokeStyle = highlighted ? '#f5c518' : 'rgba(255,255,255,0.3)';
+    ctx.strokeStyle = highlighted ? '#f5c518' : 'rgba(255,255,255,0.25)';
     ctx.lineWidth = highlighted ? 2 : 1;
     ctx.stroke();
     ctx.restore();
@@ -193,16 +193,11 @@ class ForceGraph {
       ctx.shadowBlur = 0;
     }
 
-    // Name below
-    ctx.fillStyle = highlighted ? '#f5c518' : '#ccc';
+    // Count below avatar
+    ctx.fillStyle = highlighted ? '#f5c518' : '#999';
     ctx.font = `${highlighted ? 9 : 8}px -apple-system, sans-serif`;
     ctx.textAlign = 'center';
-    ctx.fillText(n.name.slice(0, 5), x, y + r + 12);
-
-    // Count below name
-    ctx.fillStyle = highlighted ? '#f5c518' : '#888';
-    ctx.font = `${highlighted ? 8 : 7}px -apple-system, sans-serif`;
-    ctx.fillText(`合作${n.count}次`, x, y + r + 24);
+    ctx.fillText(n.count + '次', x, y + r + 14);
   }
 
   getPos(e) { const r = this.canvas.getBoundingClientRect(); return { x: (e.clientX-r.left)/this.scale, y: (e.clientY-r.top)/this.scale }; }
