@@ -109,7 +109,7 @@ class ForceGraph {
         if (a === this.dragging || b === this.dragging) continue;
         const dx = b.x - a.x, dy = b.y - a.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const minD = 14 + 14 + 12;
+        const minD = 12 + 12 + 12;
         if (dist < minD) {
           const f = (minD - dist) * 0.5, nx = dx / dist, ny = dy / dist;
           a.vx -= nx * f * 0.5; a.vy -= ny * f * 0.5;
@@ -125,8 +125,8 @@ class ForceGraph {
       if (n === this.dragging) continue;
       n.vx *= damping; n.vy *= damping;
       n.x += n.vx; n.y += n.vy;
-      n.x = Math.max(14, Math.min(this.w - 14, n.x));
-      n.y = Math.max(14, Math.min(this.h - 14, n.y));
+      n.x = Math.max(12, Math.min(this.w - 12, n.x));
+      n.y = Math.max(12, Math.min(this.h - 12, n.y));
     }
 
     this.draw(); this.frameCount++;
@@ -164,7 +164,7 @@ class ForceGraph {
 
   drawNode(n, highlighted) {
     const { ctx } = this;
-    const x = n.x, y = n.y, r = highlighted ? 16 : 14;
+    const x = n.x, y = n.y, r = highlighted ? 14 : 12;
 
     // Avatar circle clip
     ctx.save();
@@ -174,18 +174,26 @@ class ForceGraph {
     ctx.clip();
 
     if (n.img && n.img.complete && n.img.naturalWidth > 0) {
-      ctx.drawImage(n.img, x - r, y - r, r * 2, r * 2);
+      // cover-style: scale to fill circle, center crop
+      const iw = n.img.naturalWidth, ih = n.img.naturalHeight;
+      const scale = Math.max(2 * r / iw, 2 * r / ih);
+      const dw = iw * scale, dh = ih * scale;
+      ctx.drawImage(n.img, x - dw/2, y - dh/2, dw, dh);
     } else {
       ctx.fillStyle = highlighted ? '#f5c518' : 'rgba(210,215,235,0.85)';
       ctx.fill();
     }
-    // Border ring
+    ctx.restore();
+
+    // Border ring with subtle glow
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.strokeStyle = highlighted ? '#f5c518' : 'rgba(255,255,255,0.25)';
-    ctx.lineWidth = highlighted ? 2 : 1;
+    ctx.strokeStyle = highlighted ? '#f5c518' : 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = highlighted ? 2 : 1.5;
+    ctx.shadowColor = highlighted ? 'rgba(245,197,24,0.5)' : 'rgba(255,255,255,0.08)';
+    ctx.shadowBlur = highlighted ? 8 : 3;
     ctx.stroke();
-    ctx.restore();
+    ctx.shadowBlur = 0;
 
     if (highlighted) {
       // Tooltip above node
@@ -207,7 +215,7 @@ class ForceGraph {
 
   hitTest(px, py) {
     if (Math.hypot(px-this.center.x, py-this.center.y) < 20) return { type: 'center' };
-    for (const n of this.nodes) { if (Math.hypot(px-n.x, py-n.y) < 16+5) return { type: 'actor', node: n }; }
+    for (const n of this.nodes) { if (Math.hypot(px-n.x, py-n.y) < 14+5) return { type: 'actor', node: n }; }
     return null;
   }
 
