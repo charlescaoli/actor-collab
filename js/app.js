@@ -482,4 +482,3 @@ function renderGraph(){
 }
 
 if(getApiKey())showApp();
-setTimeout(function(){if(document.getElementById("apiKeyPrompt").classList.contains("show"))showApp();},50);
