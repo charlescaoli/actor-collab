@@ -201,11 +201,6 @@ class ForceGraph {
       ctx.fillText(`合作 ${n.count} 次`, x, tipY + 28);
     }
 
-    // Count below avatar
-    ctx.fillStyle = highlighted ? '#f5c518' : '#999';
-    ctx.font = `${highlighted ? 9 : 8}px -apple-system, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.fillText(n.count + '次', x, y + r + 14);
   }
 
   getPos(e) { const r = this.canvas.getBoundingClientRect(); return { x: (e.clientX-r.left)/this.scale, y: (e.clientY-r.top)/this.scale }; }
