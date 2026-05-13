@@ -6,6 +6,7 @@ import {
   getMovieDetails, getTVDetails,
   profileUrl, posterUrl, backdropUrl
 } from './api.js';
+import { ForceGraph } from './graph.js';
 
 // ── DOM refs ──────────────────────────────────
 const apiKeyPrompt  = document.getElementById('apiKeyPrompt');
@@ -26,7 +27,6 @@ const bannerBio     = document.getElementById('bannerBio');
 const backBtn       = document.getElementById('backBtn');
 const graphToggleBtn = document.getElementById('graphToggleBtn');
 const graphContainer = document.getElementById('graphContainer');
-const graphGalleryScroll = document.getElementById('graphGalleryScroll');
 const loadingSection = document.getElementById('loadingSection');
 const loadingText   = document.getElementById('loadingText');
 const progressFill  = document.getElementById('progressFill');
@@ -36,22 +36,29 @@ const collabGrid    = document.getElementById('collabGrid');
 const errorToast    = document.getElementById('errorToast');
 const movieModal    = document.getElementById('movieModal');
 const modalClose    = document.getElementById('modalClose');
-const modalBackdrop = document.getElementById('modalBackdrop');
+const modalHero     = document.getElementById('modalHero');
 const modalPoster   = document.getElementById('modalPoster');
 const modalTitle    = document.getElementById('modalTitle');
-const modalMeta     = document.getElementById('modalMeta');
+const modalMetaBar  = document.getElementById('modalMetaBar');
 const modalOverview = document.getElementById('modalOverview');
 const modalCast     = document.getElementById('modalCast');
 
 // ── State ─────────────────────────────────────
 let searchTimer = null;
 let currentActor = null;
+let currentCollabs = null;
+let currentGraph = null;
 
 // ── Cache ─────────────────────────────────────
 const creditsCache = new Map();    // key: "movie-123" or "tv-456" → cast[]
 const collabCache = new Map();     // key: actorId → collab results
 
 // ── API Key ───────────────────────────────────
+const savedKey = localStorage.getItem('tmdb_api_key');
+if (savedKey) {
+  setApiKey(savedKey);
+}
+
 if (getApiKey()) {
   showApp();
 }
@@ -95,7 +102,6 @@ searchInput.addEventListener('input', () => {
     return;
   }
 
-  // Hide previous results while searching
   actorBanner.classList.remove('show');
   collabSection.classList.remove('show');
   graphContainer.classList.remove('show');
@@ -103,6 +109,7 @@ searchInput.addEventListener('input', () => {
   graphToggleBtn.classList.remove('active');
   graphToggleBtn.textContent = '🔗 关系图';
   landingState.style.display = 'none';
+  if (currentGraph) { currentGraph.destroy(); currentGraph = null; }
 
   searchSpinner.classList.add('active');
   searchTimer = setTimeout(() => doSearch(query), 300);
@@ -172,10 +179,11 @@ suggestions.addEventListener('click', (e) => {
 // ── Actor Selection ───────────────────────────
 async function selectActor(person) {
   currentActor = person;
+  currentCollabs = null;
+  if (currentGraph) { currentGraph.destroy(); currentGraph = null; }
   searchResults.classList.remove('show');
   searchInput.value = '';
 
-  // Show banner immediately with what we have
   bannerAvatar.src = profileUrl(person.profile_path);
   bannerAvatar.alt = person.name;
   bannerName.textContent = person.name;
@@ -184,8 +192,10 @@ async function selectActor(person) {
   actorBanner.classList.add('show');
   landingState.style.display = 'none';
 
-  // Show loading
   collabSection.classList.remove('show');
+  graphContainer.classList.remove('show');
+  graphToggleBtn.classList.remove('active');
+  graphToggleBtn.textContent = '🔗 关系图';
   loadingSection.classList.add('show');
   loadingText.textContent = '正在加载作品列表...';
   progressFill.style.width = '0%';
@@ -197,7 +207,6 @@ async function selectActor(person) {
       getPersonTVCredits(person.id)
     ]);
 
-    // Update banner with details + top 5 movies
     bannerDetails.textContent = [
       details.birthday ? `🎂 ${details.birthday}` : '',
       details.place_of_birth ? `📍 ${details.place_of_birth}` : '',
@@ -220,7 +229,6 @@ async function selectActor(person) {
       uniqueCredits.push(w);
     }
 
-    // Banner top 5: sort by box office revenue (fetch details for top popular movies)
     const moviesOnly = uniqueCredits.filter(w => w.type === 'movie');
     const topPopular = [...moviesOnly].sort((a, b) => b.popularity - a.popularity).slice(0, 15);
     const movieDetails = await Promise.allSettled(
@@ -241,7 +249,6 @@ async function selectActor(person) {
         <div class="t-revenue">${w.revenue ? '$' + fmtMoney(w.revenue) : ''} · ${w.date.slice(0,4) || '—'}</div>
       </div>`).join('');
 
-    // Compute collaborations: sort by date DESC (newest first) to cover full career
     let collabs;
     if (collabCache.has(person.id)) {
       collabs = collabCache.get(person.id);
@@ -267,8 +274,6 @@ async function selectActor(person) {
 
 // ── Collaboration Computation ─────────────────
 async function computeCollaborations(actorId, sortedWorks) {
-  // sortedWorks is pre-sorted by date DESC, already deduplicated
-  // Uniform sampling across the career to cover ALL eras (not just recent)
   const MAX = 50;
   let sampledWorks;
   if (sortedWorks.length <= MAX) {
@@ -282,6 +287,7 @@ async function computeCollaborations(actorId, sortedWorks) {
   }
   const total = sampledWorks.length;
 
+  // Key: actorId (was: actor name — FIXED)
   const collabMap = new Map();
 
   loadingText.textContent = `正在分析 ${total} 部作品中的合作演员...`;
@@ -305,17 +311,17 @@ async function computeCollaborations(actorId, sortedWorks) {
       const work = batch[j];
       for (const castMember of r.value) {
         if (castMember.id === actorId) continue;
-        const name = castMember.name;
-        if (!collabMap.has(name)) {
-          collabMap.set(name, {
+        const collabKey = castMember.id; // FIXED: was castMember.name
+        if (!collabMap.has(collabKey)) {
+          collabMap.set(collabKey, {
             id: castMember.id,
-            name,
+            name: castMember.name,
             profile_path: castMember.profile_path,
             count: 0,
             sharedWorks: new Map()
           });
         }
-        const entry = collabMap.get(name);
+        const entry = collabMap.get(collabKey);
         entry.count++;
         const swKey = `${work.type}-${work.id}`;
         if (!entry.sharedWorks.has(swKey)) {
@@ -329,7 +335,6 @@ async function computeCollaborations(actorId, sortedWorks) {
     loadingText.textContent = `正在分析 ${done}/${total} 部作品...`;
   }
 
-  // Sort by count desc, take top 50, convert sharedWorks to sorted array (top 5)
   return [...collabMap.values()]
     .sort((a, b) => b.count - a.count)
     .slice(0, 50)
@@ -389,7 +394,9 @@ function renderCollaborations(collabs, actorName) {
 
 // ── Back button ───────────────────────────────
 backBtn.addEventListener('click', () => {
-  currentActor = null; currentCollabs = null;
+  currentActor = null;
+  currentCollabs = null;
+  if (currentGraph) { currentGraph.destroy(); currentGraph = null; }
   actorBanner.classList.remove('show');
   collabSection.classList.remove('show');
   graphContainer.classList.remove('show');
@@ -407,7 +414,6 @@ document.addEventListener('click', (e) => {
     searchResults.classList.remove('show');
   }
 
-  // Movie poster click → open detail modal
   const movieThumb = e.target.closest('[data-movie-type]');
   if (movieThumb) {
     const type = movieThumb.dataset.movieType;
@@ -434,11 +440,10 @@ async function openMovieDetail(type, id) {
   movieModal.classList.add('show');
   document.body.style.overflow = 'hidden';
 
-  // Show loading
-  modalBackdrop.style.backgroundImage = '';
+  modalHero.style.backgroundImage = '';
   modalPoster.src = '';
   modalTitle.textContent = '加载中...';
-  modalMeta.innerHTML = '';
+  modalMetaBar.innerHTML = '';
   modalOverview.textContent = '';
   modalCast.innerHTML = '<div class="modal-loading">正在加载...</div>';
 
@@ -454,42 +459,34 @@ async function openMovieDetail(type, id) {
       })()
     ]);
 
-    // Backdrop
     if (details.backdrop_path) {
-      modalBackdrop.style.backgroundImage = `url(${backdropUrl(details.backdrop_path)})`;
+      modalHero.style.backgroundImage = `url(${backdropUrl(details.backdrop_path)})`;
     }
 
-    // Poster
     modalPoster.src = posterUrl(details.poster_path, 'w342');
-
-    // Title
     modalTitle.textContent = details.title || details.name || '';
 
-    // Meta
     const year = (details.release_date || details.first_air_date || '').slice(0, 4);
     const runtime = details.runtime ? `${details.runtime}分钟` : '';
     const genres = (details.genres || []).map(g => g.name).join(' / ');
     const rating = details.vote_average ? `★ ${details.vote_average.toFixed(1)}` : '';
-    modalMeta.innerHTML = [year, runtime, genres, rating].filter(Boolean).map(s => `<span>${s}</span>`).join('');
+    modalMetaBar.innerHTML = [year, runtime, genres, rating].filter(Boolean).map(s => `<span>${s}</span>`).join('');
 
-    // Overview
     modalOverview.textContent = details.overview || '暂无简介';
 
-    // Cast
     const topCast = (credits || []).slice(0, 30);
     modalCast.innerHTML = topCast.map(c => `
-      <div class="modal-cast-chip" data-person-id="${c.id}" data-person-name="${esc(c.name)}" data-person-profile="${c.profile_path || ''}">
+      <div class="modal-cast-item" data-person-id="${c.id}" data-person-name="${esc(c.name)}" data-person-profile="${c.profile_path || ''}">
         ${c.profile_path
-          ? `<img src="${profileUrl(c.profile_path)}" alt="${esc(c.name)}" loading="lazy">`
-          : `<div class="no-avatar-small">🎬</div>`
+          ? `<img class="cast-img" src="${profileUrl(c.profile_path)}" alt="${esc(c.name)}" loading="lazy">`
+          : `<div class="cast-no-img">🎬</div>`
         }
-        <span class="cast-name">${esc(c.name)}</span>
-        ${c.character ? `<span class="cast-role">${esc(c.character)}</span>` : ''}
+        <div class="cast-name">${esc(c.name)}</div>
+        ${c.character ? `<div class="cast-char">${esc(c.character)}</div>` : ''}
       </div>
     `).join('');
 
-    // Click actors in modal
-    modalCast.querySelectorAll('.modal-cast-chip').forEach(chip => {
+    modalCast.querySelectorAll('.modal-cast-item').forEach(chip => {
       chip.addEventListener('click', () => {
         const pid = parseInt(chip.dataset.personId);
         const pname = chip.dataset.personName;
@@ -525,6 +522,7 @@ function resetApiKey() {
   loadingSection.classList.remove('show');
   graphToggleBtn.classList.remove('active');
   graphToggleBtn.textContent = '🔗 关系图';
+  if (currentGraph) { currentGraph.destroy(); currentGraph = null; }
 }
 
 // ── Graph Toggle ──────────────────────────────
@@ -535,46 +533,27 @@ graphToggleBtn.addEventListener('click', () => {
     collabSection.classList.add('show');
     graphToggleBtn.textContent = '🔗 关系图';
     graphToggleBtn.classList.remove('active');
+    if (currentGraph) { currentGraph.destroy(); currentGraph = null; }
   } else {
     collabSection.classList.remove('show');
     graphContainer.classList.add('show');
     graphToggleBtn.textContent = '📋 列表';
     graphToggleBtn.classList.add('active');
-    renderGraphGallery();
+    renderGraph();
   }
 });
 
-// ── Graph Gallery (horizontal scroll) ──────────
-function renderGraphGallery() {
+function renderGraph() {
   if (!currentCollabs || !currentCollabs.length) return;
-  const name = bannerName.textContent;
-  const top30 = currentCollabs.slice(0, 30);
-  graphGalleryScroll.innerHTML = top30.map(c => `
-    <div class="graph-gallery-card" data-actor-id="${c.id}" data-actor-name="${esc(c.name)}" data-actor-profile="${c.profile_path || ''}">
-      ${c.profile_path
-        ? `<img class="gg-avatar" src="${profileUrl(c.profile_path, 'w185')}" alt="${esc(c.name)}" loading="lazy">`
-        : `<div class="gg-no-avatar">🎬</div>`
-      }
-      <div class="gg-name">${esc(c.name)}</div>
-      <div class="gg-count" style="color:${c.count >= 8 ? '#f5c518' : '#888'}">合作 ${c.count} 次</div>
-    </div>
-  `).join('');
-
-  graphGalleryScroll.querySelectorAll('.graph-gallery-card').forEach(card => {
-    card.addEventListener('click', () => {
-      graphContainer.classList.remove('show');
-      collabSection.classList.add('show');
-      graphToggleBtn.textContent = '🔗 关系图';
-      graphToggleBtn.classList.remove('active');
-      selectActor({
-        id: parseInt(card.dataset.actorId),
-        name: card.dataset.actorName,
-        profile_path: card.dataset.actorProfile,
-        known_for_department: ''
-      });
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-  });
+  graphContainer.innerHTML = '';
+  currentGraph = new ForceGraph(
+    graphContainer,
+    currentCollabs,
+    currentActor.name,
+    (node) => {
+      selectActor({ id: node.id, name: node.name, profile_path: '', known_for_department: '' });
+    }
+  );
 }
 
 // ── fmtMoney ──────────────────────────────────
@@ -583,3 +562,6 @@ function fmtMoney(n) {
   if (n >= 1e6) return (n / 1e6).toFixed(0) + 'M';
   return n.toString();
 }
+
+if (getApiKey()) showApp();
+setTimeout(function(){ if (document.getElementById("apiKeyPrompt").classList.contains("show")) showApp(); }, 50);

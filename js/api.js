@@ -1,7 +1,7 @@
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const IMG_BASE = 'https://image.tmdb.org/t/p';
 
-let API_KEY = '48aadff7dc3b51412e03de79d1630688';
+let API_KEY = '';
 
 export function setApiKey(key) {
   API_KEY = key;
