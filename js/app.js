@@ -294,7 +294,7 @@ function doSearch(query) {
       searchSpinner.classList.remove('active');
       if (err.message === 'INVALID_API_KEY') { showToast('API Key 无效'); resetApiKey(); }
       else if (err.message === 'RATE_LIMITED') showToast('请求太频繁，稍等再试');
-      else showToast('搜索失败，请检查网络');
+      else { console.error('TMDB error:', err); showToast('搜索失败: '+err.message); }
     });
 }
 
@@ -360,7 +360,7 @@ async function selectActor(person) {
   } catch(err) {
     loadingSection.classList.remove('show');
     if (err.message==='INVALID_API_KEY') { showToast('API Key 无效'); resetApiKey(); }
-    else showToast('加载失败: '+err.message);
+    else { console.error('TMDB error:', err); showToast('加载失败: '+err.message); }
   }
 }
 
