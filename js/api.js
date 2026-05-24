@@ -81,3 +81,7 @@ export async function getMovieDetails(movieId) {
 export async function getTVDetails(tvId) {
   return fetchTMDB(`/tv/${tvId}`);
 }
+
+export async function getConfiguration() {
+  return fetchTMDB('/configuration');
+}
