@@ -1,31 +1,37 @@
+import { profileUrl } from './api.js';
+import { getGraphMetrics, getMobileOrbitPosition, getSharedWorkPreview } from './state.js';
+
 export class ForceGraph {
-  constructor(container, collabs, centerName, onActorClick) {
+  constructor(container, collabs, centerName, options = {}) {
     this.container = container;
     this.centerName = centerName;
-    this.onActorClick = onActorClick;
+    this.onNodeSelect = options.onNodeSelect;
+    this.isMobile = window.matchMedia('(max-width: 600px)').matches;
 
-    // Take top 30 collaborators
-    const sorted = [...collabs].sort((a, b) => b.count - a.count).slice(0, 30);
-    const maxCount = Math.max(...sorted.map(c => c.count), 1);
-    this.nodes = sorted.map(c => ({
-      id: c.id,
-      name: c.name,
-      count: c.count,
-      sharedWorks: c.sharedWorks,
-      radius: 5 + (c.count / maxCount) * 10, // 5-15px
-      x: 0, y: 0, vx: 0, vy: 0
-    }));
+    const sorted = [...collabs].sort((a, b) => b.count - a.count).slice(0, this.isMobile ? 12 : 30);
+    this.maxCount = Math.max(...sorted.map(c => c.count), 1);
+    this.nodes = sorted.map(c => {
+      const metrics = getGraphMetrics(c.count, this.maxCount);
+      const n = {
+        id: c.id, name: c.name, count: c.count, sharedWorks: c.sharedWorks,
+        radius: metrics.radius, edgeWidth: metrics.edgeWidth, edgeAlpha: metrics.edgeAlpha,
+        profile_path: c.profile_path, x: 0, y: 0, vx: 0, vy: 0, img: null
+      };
+      if (c.profile_path) {
+        n.img = new Image();
+        n.img.crossOrigin = 'anonymous';
+        n.img.src = profileUrl(c.profile_path, 'w92');
+      }
+      return n;
+    });
 
     this.canvas = document.createElement('canvas');
     this.ctx = this.canvas.getContext('2d');
     this.center = { x: 0, y: 0, fixed: true };
-    this.scale = 1;
-    this.offset = { x: 0, y: 0 };
-    this.dragging = null;
-    this.hovered = null;
-    this.frameCount = 0;
-    this.maxFrames = 120;
-    this.destroyed = false;
+    this.scale = 1; this.offset = { x: 0, y: 0 };
+    this.dragging = null; this.hovered = null;
+    this.selected = this.nodes.find(n => n.id === options.selectedId) || this.nodes[0] || null;
+    this.frameCount = 0; this.maxFrames = 120; this.destroyed = false;
 
     container.appendChild(this.canvas);
     this.resize();
@@ -42,36 +48,53 @@ export class ForceGraph {
     this.canvas.style.width = rect.width + 'px';
     this.canvas.style.height = rect.height + 'px';
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.w = rect.width;
-    this.h = rect.height;
-    this.center.x = this.w / 2;
-    this.center.y = this.h / 2;
+    this.w = rect.width; this.h = rect.height;
+    this.center.x = this.w / 2; this.center.y = this.h / 2;
   }
 
   initNodes() {
+    if (this.isMobile) {
+      for (let i = 0; i < this.nodes.length; i++) {
+        const n = this.nodes[i];
+        const pos = getMobileOrbitPosition(i, this.nodes.length, this.w, this.h, n.count, this.maxCount);
+        n.baseX = pos.x;
+        n.baseY = pos.y;
+        n.floatPhase = i * 0.7;
+        n.x = pos.x;
+        n.y = pos.y;
+        n.vx = 0; n.vy = 0;
+      }
+      return;
+    }
     for (const n of this.nodes) {
       const angle = Math.random() * Math.PI * 2;
-      const radius = 80 + Math.random() * 150;
-      n.x = this.center.x + Math.cos(angle) * radius;
-      n.y = this.center.y + Math.sin(angle) * radius;
+      const r = 90 + Math.random() * Math.min(this.w, this.h) * 0.32;
+      n.x = this.center.x + Math.cos(angle) * r;
+      n.y = this.center.y + Math.sin(angle) * r;
     }
+  }
+
+  reshuffle() {
+    this.frameCount = 0;
+    this.initNodes();
+    this.simulate();
   }
 
   simulate() {
     if (this.destroyed) return;
-    if (this.frameCount >= this.maxFrames) {
+    if (this.isMobile) {
       this.draw();
+      this._raf = requestAnimationFrame(() => this.simulate());
       return;
     }
+    if (this.frameCount >= this.maxFrames) { this.draw(); return; }
 
-    const centerPull = 0.004;
-    const nodeRepel = 300;
-    const damping = 0.82;
+    const cp = 0.004, damping = 0.82;
 
     for (const n of this.nodes) {
       if (n === this.dragging) continue;
-      n.vx += (this.center.x - n.x) * centerPull;
-      n.vy += (this.center.y - n.y) * centerPull;
+      n.vx += (this.center.x - n.x) * cp;
+      n.vy += (this.center.y - n.y) * cp;
     }
 
     for (let i = 0; i < this.nodes.length; i++) {
@@ -80,20 +103,15 @@ export class ForceGraph {
         if (a === this.dragging || b === this.dragging) continue;
         const dx = b.x - a.x, dy = b.y - a.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const minDist = a.radius + b.radius + 12;
-        if (dist < minDist) {
-          const force = (minDist - dist) * 0.5;
-          const nx = dx / dist, ny = dy / dist;
-          a.vx -= nx * force * 0.5;
-          a.vy -= ny * force * 0.5;
-          b.vx += nx * force * 0.5;
-          b.vy += ny * force * 0.5;
+        const minD = a.radius + b.radius + 14;
+        if (dist < minD) {
+          const f = (minD - dist) * 0.5, nx = dx / dist, ny = dy / dist;
+          a.vx -= nx * f * 0.5; a.vy -= ny * f * 0.5;
+          b.vx += nx * f * 0.5; b.vy += ny * f * 0.5;
         }
-        const repelForce = nodeRepel / (dist * dist);
-        a.vx -= dx / dist * repelForce * 0.3;
-        a.vy -= dy / dist * repelForce * 0.3;
-        b.vx += dx / dist * repelForce * 0.3;
-        b.vy += dy / dist * repelForce * 0.3;
+        const rf = 300 / (dist * dist);
+        a.vx -= dx / dist * rf * 0.3; a.vy -= dy / dist * rf * 0.3;
+        b.vx += dx / dist * rf * 0.3; b.vy += dy / dist * rf * 0.3;
       }
     }
 
@@ -101,14 +119,11 @@ export class ForceGraph {
       if (n === this.dragging) continue;
       n.vx *= damping; n.vy *= damping;
       n.x += n.vx; n.y += n.vy;
-      // Clamp to canvas
-      n.x = Math.max(n.radius, Math.min(this.w - n.radius, n.x));
-      n.y = Math.max(n.radius, Math.min(this.h - n.radius, n.y));
+      n.x = Math.max(n.radius + 4, Math.min(this.w - n.radius - 4, n.x));
+      n.y = Math.max(n.radius + 4, Math.min(this.h - n.radius - 4, n.y));
     }
 
-    this.draw();
-    this.frameCount++;
-
+    this.draw(); this.frameCount++;
     if (this.frameCount < this.maxFrames) {
       this._raf = requestAnimationFrame(() => this.simulate());
     }
@@ -117,152 +132,128 @@ export class ForceGraph {
   draw() {
     const { ctx, w, h, center, nodes, hovered } = this;
     ctx.clearRect(0, 0, w, h);
+    const pulse = this.isMobile ? (0.88 + Math.sin(performance.now() / 900) * 0.12) : 1;
 
-    const maxCount = Math.max(...nodes.map(n => n.count), 1);
-
-    // Lines from center to each node
     for (const n of nodes) {
-      const alpha = 0.1 + (n.count / maxCount) * 0.3;
+      if (this.isMobile) this.updateFloatingPosition(n);
       ctx.beginPath();
-      ctx.moveTo(center.x, center.y);
-      ctx.lineTo(n.x, n.y);
-      ctx.strokeStyle = `rgba(245,197,24,${alpha})`;
-      ctx.lineWidth = 0.4 + (n.count / maxCount) * 1.6;
+      ctx.moveTo(center.x, center.y); ctx.lineTo(n.x, n.y);
+      const dim = this.selected && n !== this.selected ? 0.42 : 1;
+      ctx.strokeStyle = `rgba(245,197,24,${(n === this.selected ? Math.min(0.86, n.edgeAlpha + 0.24) * pulse : n.edgeAlpha) * dim})`;
+      ctx.lineWidth = n === this.selected ? (n.edgeWidth + 1.4) * pulse : n.edgeWidth;
       ctx.stroke();
     }
-
-    // Actor nodes
-    for (const n of nodes) {
-      this.drawNode(n.x, n.y, n.radius, n.name, n === hovered, n.count, maxCount);
-    }
-
-    // Center node on top
+    for (const n of nodes) this.drawNode(n, n === hovered, n === this.selected);
     this.drawCenter(center.x, center.y);
   }
 
   drawCenter(x, y) {
     const { ctx } = this;
-    // Outer glow
-    ctx.beginPath();
-    ctx.arc(x, y, 24, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(245,197,24,0.15)';
-    ctx.fill();
-    // Main circle
-    ctx.beginPath();
-    ctx.arc(x, y, 16, 0, Math.PI * 2);
-    ctx.fillStyle = '#f5c518';
-    ctx.shadowColor = 'rgba(245,197,24,0.7)';
-    ctx.shadowBlur = 18;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    // Border
-    ctx.beginPath();
-    ctx.arc(x, y, 16, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    // Label
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 11px -apple-system, sans-serif';
-    ctx.textAlign = 'center';
+    ctx.beginPath(); ctx.arc(x, y, 24, 0, Math.PI*2); ctx.fillStyle = 'rgba(245,197,24,0.15)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI*2);
+    ctx.fillStyle = '#f5c518'; ctx.shadowColor = 'rgba(245,197,24,0.7)'; ctx.shadowBlur = 18; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px -apple-system, sans-serif'; ctx.textAlign = 'center';
     ctx.fillText(this.centerName.slice(0, 8), x, y - 24);
   }
 
-  drawNode(x, y, r, name, highlighted, count, maxCount) {
+  drawNode(n, highlighted, selected) {
     const { ctx } = this;
-    const isStrong = count >= maxCount * 0.5;
+    const x = n.x, y = n.y, r = highlighted || selected ? n.radius + 2 : n.radius;
+    const alpha = this.selected && !selected && !highlighted ? 0.55 : 1;
 
+    // Avatar circle clip
+    ctx.save();
+    ctx.globalAlpha = alpha;
     ctx.beginPath();
-    ctx.arc(x, y, highlighted ? r * 1.2 : r, 0, Math.PI * 2);
-    if (highlighted) {
-      ctx.fillStyle = '#f5c518';
-      ctx.shadowColor = 'rgba(245,197,24,0.7)';
-    } else if (isStrong) {
-      ctx.fillStyle = '#f0d060';
-      ctx.shadowColor = 'rgba(245,197,24,0.4)';
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+
+    if (n.img && n.img.complete && n.img.naturalWidth > 0) {
+      // cover-style: scale to fill circle, center crop
+      const iw = n.img.naturalWidth, ih = n.img.naturalHeight;
+      const scale = Math.max(2 * r / iw, 2 * r / ih);
+      const dw = iw * scale, dh = ih * scale;
+      ctx.drawImage(n.img, x - dw/2, y - dh/2, dw, dh);
     } else {
-      ctx.fillStyle = 'rgba(210,215,235,0.85)';
-      ctx.shadowColor = 'rgba(210,215,235,0.3)';
-    }
-    ctx.shadowBlur = highlighted ? 14 : 6;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    // Label
-    if (highlighted || r >= 10) {
-      ctx.fillStyle = highlighted ? '#f5c518' : '#aaa';
-      ctx.font = `${highlighted ? '9' : '7.5'}px -apple-system, sans-serif`;
+      ctx.fillStyle = highlighted || selected ? '#f5c518' : 'rgba(210,215,235,0.85)';
+      ctx.fill();
+      ctx.fillStyle = highlighted || selected ? '#15151d' : '#fff';
+      ctx.font = 'bold 10px -apple-system, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(name.slice(0, 6), x, y - r - 5);
+      ctx.fillText(n.name.slice(0, 1), x, y + 3);
     }
+    ctx.restore();
+
+    // Border ring with subtle glow
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = highlighted || selected ? '#f5c518' : 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = highlighted || selected ? 2.2 : 1.4;
+    ctx.shadowColor = highlighted || selected ? 'rgba(245,197,24,0.5)' : 'rgba(255,255,255,0.08)';
+    ctx.shadowBlur = highlighted || selected ? 9 : 3;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    if (!this.isMobile) {
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 10px -apple-system, sans-serif';
+      ctx.textAlign = 'center'; ctx.fillText(n.name.slice(0, 6), x, y + r + 13);
+      ctx.fillStyle = '#f5c518'; ctx.font = '8px -apple-system, sans-serif';
+      ctx.fillText(`${n.count} 次`, x, y + r + 25);
+    }
+
+    if (!this.isMobile && (highlighted || selected)) {
+      const preview = getSharedWorkPreview(n.sharedWorks, 2);
+      const tipW = 138, tipH = preview.length ? 56 : 40;
+      const tipX = Math.max(6, Math.min(this.w - tipW - 6, x - tipW/2));
+      const tipY = Math.max(6, y - r - tipH - 12);
+      ctx.fillStyle = 'rgba(20,20,35,0.92)';
+      ctx.beginPath(); ctx.roundRect(tipX, tipY, tipW, tipH, 6); ctx.fill();
+      ctx.strokeStyle = 'rgba(245,197,24,0.4)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(tipX, tipY, tipW, tipH, 6); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 8px -apple-system, sans-serif';
+      ctx.textAlign = 'center'; ctx.fillText(n.name, tipX + tipW/2, tipY + 14);
+      ctx.fillStyle = '#f5c518'; ctx.font = '7px -apple-system, sans-serif';
+      ctx.fillText(`合作 ${n.count} 次`, tipX + tipW/2, tipY + 27);
+      ctx.fillStyle = '#bdbdca';
+      preview.forEach((work, i) => ctx.fillText(work.slice(0, 18), tipX + tipW/2, tipY + 40 + i * 10));
+    }
+
   }
 
-  getPos(e) {
-    const rect = this.canvas.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) / this.scale,
-      y: (e.clientY - rect.top) / this.scale
-    };
+  updateFloatingPosition(n) {
+    const t = performance.now() / 1000;
+    const selectedBoost = n === this.selected ? 1.25 : 1;
+    n.x = n.baseX + Math.sin(t * 1.05 + n.floatPhase) * 5.5 * selectedBoost;
+    n.y = n.baseY + Math.cos(t * 0.9 + n.floatPhase * 1.3) * 4.5 * selectedBoost;
   }
+
+  getPos(e) { const r = this.canvas.getBoundingClientRect(); return { x: (e.clientX-r.left)/this.scale, y: (e.clientY-r.top)/this.scale }; }
 
   hitTest(px, py) {
-    const dc = Math.hypot(px - this.center.x, py - this.center.y);
-    if (dc < 20) return { type: 'center' };
-    for (const n of this.nodes) {
-      if (Math.hypot(px - n.x, py - n.y) < n.radius + 5) {
-        return { type: 'actor', node: n };
-      }
-    }
+    if (Math.hypot(px-this.center.x, py-this.center.y) < 20) return { type: 'center' };
+    for (const n of this.nodes) { if (Math.hypot(px-n.x, py-n.y) < n.radius+7) return { type: 'actor', node: n }; }
     return null;
   }
 
   bindEvents() {
-    this._onMouseDown = e => {
-      const pos = this.getPos(e);
-      const hit = this.hitTest(pos.x, pos.y);
-      if (hit?.type === 'actor') {
-        this.dragging = hit.node;
-        this.canvas.style.cursor = 'grabbing';
-      }
-    };
-
-    this._onMouseMove = e => {
-      const pos = this.getPos(e);
-      if (this.dragging) {
-        this.dragging.x = pos.x;
-        this.dragging.y = pos.y;
-        this.dragging.vx = 0;
-        this.dragging.vy = 0;
-        this.draw();
-      } else {
-        const hit = this.hitTest(pos.x, pos.y);
-        this.hovered = hit?.type === 'actor' ? hit.node : null;
-        this.canvas.style.cursor = this.hovered ? 'pointer' : '';
-        this.draw();
-      }
-    };
-
-    this._onMouseUp = () => {
-      this.dragging = null;
-      this.canvas.style.cursor = this.hovered ? 'pointer' : '';
-    };
-
+    this._onMouseDown = e => { const p = this.getPos(e); const h = this.hitTest(p.x,p.y); if (h?.type==='actor') { this.dragging=h.node; this.canvas.style.cursor='grabbing'; } };
+    this._onMouseMove = e => { const p = this.getPos(e); if (this.dragging) { this.dragging.x=p.x; this.dragging.y=p.y; this.dragging.vx=0; this.dragging.vy=0; this.draw(); } else { const h=this.hitTest(p.x,p.y); this.hovered=h?.type==='actor'?h.node:null; this.canvas.style.cursor=this.hovered?'pointer':''; this.draw(); } };
+    this._onMouseUp = () => { this.dragging=null; this.canvas.style.cursor=this.hovered?'pointer':''; };
     this._onClick = e => {
-      const pos = this.getPos(e);
-      const hit = this.hitTest(pos.x, pos.y);
-      if (hit?.type === 'actor' && this.onActorClick) {
-        this.onActorClick(hit.node);
+      const p=this.getPos(e); const h=this.hitTest(p.x,p.y);
+      if (h?.type==='actor') {
+        this.selected = h.node;
+        this.draw();
+        if (this.onNodeSelect) this.onNodeSelect(h.node);
       }
     };
-
-    this._onWheel = e => {
-      e.preventDefault();
-      this.scale *= e.deltaY < 0 ? 1.08 : 0.92;
-      this.scale = Math.max(0.3, Math.min(3, this.scale));
-      this.canvas.style.transform = `scale(${this.scale})`;
-      this.canvas.style.transformOrigin = 'center center';
-    };
-
+    this._onWheel = e => { e.preventDefault(); this.scale *= e.deltaY<0?1.08:0.92; this.scale=Math.max(0.3,Math.min(3,this.scale)); this.canvas.style.transform=`scale(${this.scale})`; this.canvas.style.transformOrigin='center center'; };
     this.canvas.addEventListener('mousedown', this._onMouseDown);
     this.canvas.addEventListener('mousemove', this._onMouseMove);
     window.addEventListener('mouseup', this._onMouseUp);
@@ -271,8 +262,7 @@ export class ForceGraph {
   }
 
   destroy() {
-    this.destroyed = true;
-    if (this._raf) cancelAnimationFrame(this._raf);
+    this.destroyed = true; if (this._raf) cancelAnimationFrame(this._raf);
     this.canvas.removeEventListener('mousedown', this._onMouseDown);
     this.canvas.removeEventListener('mousemove', this._onMouseMove);
     window.removeEventListener('mouseup', this._onMouseUp);

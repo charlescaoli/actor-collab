@@ -18,8 +18,6 @@ import {
 import {
   createLatestOnlyRunner,
   formatApiKeyError,
-  getGraphMetrics,
-  getMobileOrbitPosition,
   getSharedWorkPreview,
   getYearLabel,
   normalizeWorks,
@@ -28,277 +26,7 @@ import {
   sortWorksByDate,
 } from './state.js';
 
-// ── Force Graph (graph.js) ─────────────────────
-class ForceGraph {
-  constructor(container, collabs, centerName, options = {}) {
-    this.container = container;
-    this.centerName = centerName;
-    this.onNodeSelect = options.onNodeSelect;
-    this.isMobile = window.matchMedia('(max-width: 600px)').matches;
-
-    const sorted = [...collabs].sort((a, b) => b.count - a.count).slice(0, this.isMobile ? 12 : 30);
-    this.maxCount = Math.max(...sorted.map(c => c.count), 1);
-    this.nodes = sorted.map(c => {
-      const metrics = getGraphMetrics(c.count, this.maxCount);
-      const n = {
-        id: c.id, name: c.name, count: c.count, sharedWorks: c.sharedWorks,
-        radius: metrics.radius, edgeWidth: metrics.edgeWidth, edgeAlpha: metrics.edgeAlpha,
-        profile_path: c.profile_path, x: 0, y: 0, vx: 0, vy: 0, img: null
-      };
-      if (c.profile_path) {
-        n.img = new Image();
-        n.img.crossOrigin = 'anonymous';
-        n.img.src = profileUrl(c.profile_path, 'w92');
-      }
-      return n;
-    });
-
-    this.canvas = document.createElement('canvas');
-    this.ctx = this.canvas.getContext('2d');
-    this.center = { x: 0, y: 0, fixed: true };
-    this.scale = 1; this.offset = { x: 0, y: 0 };
-    this.dragging = null; this.hovered = null;
-    this.selected = this.nodes.find(n => n.id === options.selectedId) || this.nodes[0] || null;
-    this.frameCount = 0; this.maxFrames = 120; this.destroyed = false;
-
-    container.appendChild(this.canvas);
-    this.resize();
-    this.initNodes();
-    this.bindEvents();
-    this.simulate();
-  }
-
-  resize() {
-    const rect = this.container.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = rect.width * dpr;
-    this.canvas.height = rect.height * dpr;
-    this.canvas.style.width = rect.width + 'px';
-    this.canvas.style.height = rect.height + 'px';
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.w = rect.width; this.h = rect.height;
-    this.center.x = this.w / 2; this.center.y = this.h / 2;
-  }
-
-  initNodes() {
-    if (this.isMobile) {
-      for (let i = 0; i < this.nodes.length; i++) {
-        const n = this.nodes[i];
-        const pos = getMobileOrbitPosition(i, this.nodes.length, this.w, this.h, n.count, this.maxCount);
-        n.baseX = pos.x;
-        n.baseY = pos.y;
-        n.floatPhase = i * 0.7;
-        n.x = pos.x;
-        n.y = pos.y;
-        n.vx = 0; n.vy = 0;
-      }
-      return;
-    }
-    for (const n of this.nodes) {
-      const angle = Math.random() * Math.PI * 2;
-      const r = 90 + Math.random() * Math.min(this.w, this.h) * 0.32;
-      n.x = this.center.x + Math.cos(angle) * r;
-      n.y = this.center.y + Math.sin(angle) * r;
-    }
-  }
-
-  reshuffle() {
-    this.frameCount = 0;
-    this.initNodes();
-    this.simulate();
-  }
-
-  simulate() {
-    if (this.destroyed) return;
-    if (this.isMobile) {
-      this.draw();
-      this._raf = requestAnimationFrame(() => this.simulate());
-      return;
-    }
-    if (this.frameCount >= this.maxFrames) { this.draw(); return; }
-
-    const cp = 0.004, damping = 0.82;
-
-    for (const n of this.nodes) {
-      if (n === this.dragging) continue;
-      n.vx += (this.center.x - n.x) * cp;
-      n.vy += (this.center.y - n.y) * cp;
-    }
-
-    for (let i = 0; i < this.nodes.length; i++) {
-      for (let j = i + 1; j < this.nodes.length; j++) {
-        const a = this.nodes[i], b = this.nodes[j];
-        if (a === this.dragging || b === this.dragging) continue;
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const minD = a.radius + b.radius + 14;
-        if (dist < minD) {
-          const f = (minD - dist) * 0.5, nx = dx / dist, ny = dy / dist;
-          a.vx -= nx * f * 0.5; a.vy -= ny * f * 0.5;
-          b.vx += nx * f * 0.5; b.vy += ny * f * 0.5;
-        }
-        const rf = 300 / (dist * dist);
-        a.vx -= dx / dist * rf * 0.3; a.vy -= dy / dist * rf * 0.3;
-        b.vx += dx / dist * rf * 0.3; b.vy += dy / dist * rf * 0.3;
-      }
-    }
-
-    for (const n of this.nodes) {
-      if (n === this.dragging) continue;
-      n.vx *= damping; n.vy *= damping;
-      n.x += n.vx; n.y += n.vy;
-      n.x = Math.max(n.radius + 4, Math.min(this.w - n.radius - 4, n.x));
-      n.y = Math.max(n.radius + 4, Math.min(this.h - n.radius - 4, n.y));
-    }
-
-    this.draw(); this.frameCount++;
-    if (this.frameCount < this.maxFrames) {
-      this._raf = requestAnimationFrame(() => this.simulate());
-    }
-  }
-
-  draw() {
-    const { ctx, w, h, center, nodes, hovered } = this;
-    ctx.clearRect(0, 0, w, h);
-    const pulse = this.isMobile ? (0.88 + Math.sin(performance.now() / 900) * 0.12) : 1;
-
-    for (const n of nodes) {
-      if (this.isMobile) this.updateFloatingPosition(n);
-      ctx.beginPath();
-      ctx.moveTo(center.x, center.y); ctx.lineTo(n.x, n.y);
-      const dim = this.selected && n !== this.selected ? 0.42 : 1;
-      ctx.strokeStyle = `rgba(245,197,24,${(n === this.selected ? Math.min(0.86, n.edgeAlpha + 0.24) * pulse : n.edgeAlpha) * dim})`;
-      ctx.lineWidth = n === this.selected ? (n.edgeWidth + 1.4) * pulse : n.edgeWidth;
-      ctx.stroke();
-    }
-    for (const n of nodes) this.drawNode(n, n === hovered, n === this.selected);
-    this.drawCenter(center.x, center.y);
-  }
-
-  drawCenter(x, y) {
-    const { ctx } = this;
-    ctx.beginPath(); ctx.arc(x, y, 24, 0, Math.PI*2); ctx.fillStyle = 'rgba(245,197,24,0.15)'; ctx.fill();
-    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI*2);
-    ctx.fillStyle = '#f5c518'; ctx.shadowColor = 'rgba(245,197,24,0.7)'; ctx.shadowBlur = 18; ctx.fill(); ctx.shadowBlur = 0;
-    ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI*2);
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px -apple-system, sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(this.centerName.slice(0, 8), x, y - 24);
-  }
-
-  drawNode(n, highlighted, selected) {
-    const { ctx } = this;
-    const x = n.x, y = n.y, r = highlighted || selected ? n.radius + 2 : n.radius;
-    const alpha = this.selected && !selected && !highlighted ? 0.55 : 1;
-
-    // Avatar circle clip
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
-
-    if (n.img && n.img.complete && n.img.naturalWidth > 0) {
-      // cover-style: scale to fill circle, center crop
-      const iw = n.img.naturalWidth, ih = n.img.naturalHeight;
-      const scale = Math.max(2 * r / iw, 2 * r / ih);
-      const dw = iw * scale, dh = ih * scale;
-      ctx.drawImage(n.img, x - dw/2, y - dh/2, dw, dh);
-    } else {
-      ctx.fillStyle = highlighted || selected ? '#f5c518' : 'rgba(210,215,235,0.85)';
-      ctx.fill();
-      ctx.fillStyle = highlighted || selected ? '#15151d' : '#fff';
-      ctx.font = 'bold 10px -apple-system, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(n.name.slice(0, 1), x, y + 3);
-    }
-    ctx.restore();
-
-    // Border ring with subtle glow
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.strokeStyle = highlighted || selected ? '#f5c518' : 'rgba(255,255,255,0.2)';
-    ctx.lineWidth = highlighted || selected ? 2.2 : 1.4;
-    ctx.shadowColor = highlighted || selected ? 'rgba(245,197,24,0.5)' : 'rgba(255,255,255,0.08)';
-    ctx.shadowBlur = highlighted || selected ? 9 : 3;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-    ctx.restore();
-
-    if (!this.isMobile) {
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 10px -apple-system, sans-serif';
-      ctx.textAlign = 'center'; ctx.fillText(n.name.slice(0, 6), x, y + r + 13);
-      ctx.fillStyle = '#f5c518'; ctx.font = '8px -apple-system, sans-serif';
-      ctx.fillText(`${n.count} 次`, x, y + r + 25);
-    }
-
-    if (!this.isMobile && (highlighted || selected)) {
-      const preview = getSharedWorkPreview(n.sharedWorks, 2);
-      const tipW = 138, tipH = preview.length ? 56 : 40;
-      const tipX = Math.max(6, Math.min(this.w - tipW - 6, x - tipW/2));
-      const tipY = Math.max(6, y - r - tipH - 12);
-      ctx.fillStyle = 'rgba(20,20,35,0.92)';
-      ctx.beginPath(); ctx.roundRect(tipX, tipY, tipW, tipH, 6); ctx.fill();
-      ctx.strokeStyle = 'rgba(245,197,24,0.4)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.roundRect(tipX, tipY, tipW, tipH, 6); ctx.stroke();
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 8px -apple-system, sans-serif';
-      ctx.textAlign = 'center'; ctx.fillText(n.name, tipX + tipW/2, tipY + 14);
-      ctx.fillStyle = '#f5c518'; ctx.font = '7px -apple-system, sans-serif';
-      ctx.fillText(`合作 ${n.count} 次`, tipX + tipW/2, tipY + 27);
-      ctx.fillStyle = '#bdbdca';
-      preview.forEach((work, i) => ctx.fillText(work.slice(0, 18), tipX + tipW/2, tipY + 40 + i * 10));
-    }
-
-  }
-
-  updateFloatingPosition(n) {
-    const t = performance.now() / 1000;
-    const selectedBoost = n === this.selected ? 1.25 : 1;
-    n.x = n.baseX + Math.sin(t * 1.05 + n.floatPhase) * 5.5 * selectedBoost;
-    n.y = n.baseY + Math.cos(t * 0.9 + n.floatPhase * 1.3) * 4.5 * selectedBoost;
-  }
-
-  getPos(e) { const r = this.canvas.getBoundingClientRect(); return { x: (e.clientX-r.left)/this.scale, y: (e.clientY-r.top)/this.scale }; }
-
-  hitTest(px, py) {
-    if (Math.hypot(px-this.center.x, py-this.center.y) < 20) return { type: 'center' };
-    for (const n of this.nodes) { if (Math.hypot(px-n.x, py-n.y) < n.radius+7) return { type: 'actor', node: n }; }
-    return null;
-  }
-
-  bindEvents() {
-    this._onMouseDown = e => { const p = this.getPos(e); const h = this.hitTest(p.x,p.y); if (h?.type==='actor') { this.dragging=h.node; this.canvas.style.cursor='grabbing'; } };
-    this._onMouseMove = e => { const p = this.getPos(e); if (this.dragging) { this.dragging.x=p.x; this.dragging.y=p.y; this.dragging.vx=0; this.dragging.vy=0; this.draw(); } else { const h=this.hitTest(p.x,p.y); this.hovered=h?.type==='actor'?h.node:null; this.canvas.style.cursor=this.hovered?'pointer':''; this.draw(); } };
-    this._onMouseUp = () => { this.dragging=null; this.canvas.style.cursor=this.hovered?'pointer':''; };
-    this._onClick = e => {
-      const p=this.getPos(e); const h=this.hitTest(p.x,p.y);
-      if (h?.type==='actor') {
-        this.selected = h.node;
-        this.draw();
-        if (this.onNodeSelect) this.onNodeSelect(h.node);
-      }
-    };
-    this._onWheel = e => { e.preventDefault(); this.scale *= e.deltaY<0?1.08:0.92; this.scale=Math.max(0.3,Math.min(3,this.scale)); this.canvas.style.transform=`scale(${this.scale})`; this.canvas.style.transformOrigin='center center'; };
-    this.canvas.addEventListener('mousedown', this._onMouseDown);
-    this.canvas.addEventListener('mousemove', this._onMouseMove);
-    window.addEventListener('mouseup', this._onMouseUp);
-    this.canvas.addEventListener('click', this._onClick);
-    this.canvas.addEventListener('wheel', this._onWheel, { passive: false });
-  }
-
-  destroy() {
-    this.destroyed = true; if (this._raf) cancelAnimationFrame(this._raf);
-    this.canvas.removeEventListener('mousedown', this._onMouseDown);
-    this.canvas.removeEventListener('mousemove', this._onMouseMove);
-    window.removeEventListener('mouseup', this._onMouseUp);
-    this.canvas.removeEventListener('click', this._onClick);
-    this.canvas.removeEventListener('wheel', this._onWheel);
-    if (this.canvas.parentNode) this.canvas.parentNode.removeChild(this.canvas);
-  }
-}
+import { ForceGraph } from './graph.js';
 
 // ── App Logic ──────────────────────────────────
 // DOM refs
@@ -340,8 +68,12 @@ const modalClose    = document.getElementById('modalClose');
 const modalHero     = document.getElementById('modalHero');
 const modalPoster   = document.getElementById('modalPoster');
 const modalTitle    = document.getElementById('modalTitle');
+const modalOrigTitle = document.getElementById('modalOrigTitle');
 const modalMetaBar  = document.getElementById('modalMetaBar');
+const modalStats    = document.getElementById('modalStats');
+const modalGenres   = document.getElementById('modalGenres');
 const modalOverview = document.getElementById('modalOverview');
+const modalCastTitle = document.getElementById('modalCastTitle');
 const modalCast     = document.getElementById('modalCast');
 
 // State
@@ -351,9 +83,19 @@ let currentCollabs = null;
 let currentGraph = null;
 let currentGraphSelection = null;
 let toastTimer;
+let selectGen = 0; // bumped on every selectActor call to discard stale async results
 const creditsCache = new Map();
 const collabCache = new Map();
 const searchRunner = createLatestOnlyRunner();
+
+// Bounded LRU-ish cache: re-insert on access, evict oldest when over limit
+const CREDITS_CACHE_MAX = 300;
+const COLLAB_CACHE_MAX = 60;
+function cachePut(map, key, value, max) {
+  if (map.has(key)) map.delete(key);
+  map.set(key, value);
+  if (map.size > max) map.delete(map.keys().next().value);
+}
 
 // API Key init
 const savedKey = localStorage.getItem('tmdb_api_key');
@@ -446,6 +188,7 @@ suggestions.addEventListener('click', (e) => {
 
 // Actor Selection
 async function selectActor(person) {
+  const token = ++selectGen;
   currentActor = person; currentCollabs = null;
   if (currentGraph) { currentGraph.destroy(); currentGraph = null; }
   searchResults.classList.remove('show'); searchInput.value = '';
@@ -460,23 +203,27 @@ async function selectActor(person) {
     const [details, movieCredits, tvCredits] = await Promise.all([
       getPersonDetails(person.id), getPersonMovieCredits(person.id), getPersonTVCredits(person.id)
     ]);
+    if (token !== selectGen) return;
     bannerDetails.textContent = [details.birthday?`🎂 ${details.birthday}`:'', details.place_of_birth?`📍 ${details.place_of_birth}`:''].filter(Boolean).join('  ·  ')||person.known_for_department||'';
     bannerBio.textContent = details.biography ? details.biography.slice(0,150).replace(/\n/g,' ')+(details.biography.length>150?'…':'') : '';
 
     const uniqueCredits = normalizeWorks(movieCredits, tvCredits);
     bannerTopMovies.innerHTML = '<div class="top-movie-loading">正在加载票房作品…</div>';
-    loadRevenueTopWorks(movieCredits).catch(err => {
+    loadRevenueTopWorks(movieCredits, token).catch(err => {
       console.error('TMDB revenue error:', err);
+      if (token !== selectGen) return;
       const fallbackTop5 = selectPopularWorks(movieCredits, [], 5).map(work => ({ ...work, revenue: 0 }));
       renderTopWorks(fallbackTop5);
     });
 
     let collabs;
     if (collabCache.has(person.id)) { collabs=collabCache.get(person.id); loadingSection.classList.remove('show'); }
-    else { const byDate=sortWorksByDate(uniqueCredits); collabs=await computeCollaborations(person.id,byDate); collabCache.set(person.id,collabs); }
+    else { const byDate=sortWorksByDate(uniqueCredits); collabs=await computeCollaborations(person.id,byDate,token); cachePut(collabCache,person.id,collabs,COLLAB_CACHE_MAX); }
+    if (token !== selectGen) return;
     currentCollabs = collabs;
     renderCollaborations(collabs, person.name);
   } catch(err) {
+    if (token !== selectGen) return;
     loadingSection.classList.remove('show');
     if (err.message==='INVALID_API_KEY') resetApiKey();
     console.error('TMDB error:', err);
@@ -488,9 +235,10 @@ function renderTopWorks(works) {
   bannerTopMovies.innerHTML = works.map(w=>`<div class="top-movie-item">${w.poster_path?`<img src="${posterUrl(w.poster_path,'w92')}" alt="${esc(w.title)}" loading="lazy" data-movie-type="${w.type}" data-movie-id="${w.id}">`:`<div style="width:62px;height:93px;background:rgba(255,255,255,0.04);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:0.6rem;color:#5a5a6e;cursor:pointer" data-movie-type="${w.type}" data-movie-id="${w.id}">${esc(w.title)}</div>`}<div class="t-label">${esc(w.title)}</div><div class="t-revenue">${w.revenue?'$'+fmtMoney(w.revenue):'票房暂无'} · ${getYearLabel(w)}</div></div>`).join('');
 }
 
-async function loadRevenueTopWorks(movieCredits) {
+async function loadRevenueTopWorks(movieCredits, token) {
   const candidates = selectPopularWorks(movieCredits, [], 15);
   const detailResults = await Promise.allSettled(candidates.map(work => getMovieDetails(work.id)));
+  if (token !== selectGen) return;
   const details = detailResults
     .filter(result => result.status === 'fulfilled')
     .map(result => result.value);
@@ -498,19 +246,19 @@ async function loadRevenueTopWorks(movieCredits) {
 }
 
 // Collaboration
-async function computeCollaborations(actorId, sortedWorks) {
+async function computeCollaborations(actorId, sortedWorks, token) {
   const MAX=50; let sampled;
   if (sortedWorks.length<=MAX) sampled=sortedWorks;
   else { const step=sortedWorks.length/MAX; sampled=[]; for(let i=0;i<MAX;i++) sampled.push(sortedWorks[Math.floor(i*step)]); }
   const total=sampled.length, collabMap=new Map();
-  loadingText.textContent=`正在分析 ${total} 部作品中的合作演员...`;
+  if (token === selectGen) loadingText.textContent=`正在分析 ${total} 部作品中的合作演员...`;
 
   for (let i=0; i<sampled.length; i+=8) {
     const batch=sampled.slice(i,i+8);
     const results=await Promise.allSettled(batch.map(w=>{
       const ck=`${w.type}-${w.id}`;
       if(creditsCache.has(ck)) return Promise.resolve(creditsCache.get(ck));
-      return (w.type==='movie'?getMovieCredits(w.id):getTVCredits(w.id)).then(cast=>{creditsCache.set(ck,cast);return cast;});
+      return (w.type==='movie'?getMovieCredits(w.id):getTVCredits(w.id)).then(cast=>{cachePut(creditsCache,ck,cast,CREDITS_CACHE_MAX);return cast;});
     }));
     results.forEach((r,j)=>{
       if(r.status!=='fulfilled')return; const work=batch[j];
@@ -523,8 +271,10 @@ async function computeCollaborations(actorId, sortedWorks) {
         if(!e.sharedWorks.has(sw)) e.sharedWorks.set(sw,work);
       }
     });
-    const done=Math.min(i+8,total); progressFill.style.width=`${(done/total)*100}%`;
-    loadingText.textContent=`正在分析 ${done}/${total} 部作品...`;
+    if (token === selectGen) {
+      const done=Math.min(i+8,total); progressFill.style.width=`${(done/total)*100}%`;
+      loadingText.textContent=`正在分析 ${done}/${total} 部作品...`;
+    }
   }
   return [...collabMap.values()].sort((a,b)=>b.count-a.count).slice(0,50).map(c=>({...c,sharedWorks:[...c.sharedWorks.values()].sort((a,b)=>b.popularity-a.popularity).slice(0,5)}));
 }
@@ -545,6 +295,7 @@ function renderCollaborations(collabs, actorName) {
 
 // Back
 backBtn.addEventListener('click',()=>{
+  selectGen++; // invalidate any in-flight actor load
   currentActor=null;currentCollabs=null;if(currentGraph){currentGraph.destroy();currentGraph=null;}
   actorBanner.classList.remove('show');collabSection.classList.remove('show');hideGraphView();
   loadingSection.classList.remove('show');graphToggleBtn.classList.remove('active');graphToggleBtn.textContent='🔗 关系图';
@@ -566,18 +317,42 @@ function closeModal(){movieModal.classList.remove('show');document.body.style.ov
 
 async function openMovieDetail(type,id){
   movieModal.classList.add('show');document.body.style.overflow='hidden';
-  modalHero.style.backgroundImage='';modalPoster.src='';modalTitle.textContent='加载中...';modalMetaBar.innerHTML='';
-  modalOverview.textContent='';modalCast.innerHTML='<div class="modal-loading">正在加载…</div>';
+  modalHero.style.backgroundImage='';modalPoster.src='';modalTitle.textContent='加载中...';
+  modalOrigTitle.textContent='';modalMetaBar.innerHTML='';modalStats.innerHTML='';modalGenres.innerHTML='';
+  modalOverview.textContent='';modalCastTitle.textContent='演员表';modalCast.innerHTML='<div class="modal-loading">正在加载…</div>';
   try{
-    const [details,credits]=await Promise.all([type==='movie'?getMovieDetails(id):getTVDetails(id),(async()=>{const ck=`${type}-${id}`;if(creditsCache.has(ck))return creditsCache.get(ck);const cast=type==='movie'?await getMovieCredits(id):await getTVCredits(id);creditsCache.set(ck,cast);return cast;})()]);
+    const [details,credits]=await Promise.all([type==='movie'?getMovieDetails(id):getTVDetails(id),(async()=>{const ck=`${type}-${id}`;if(creditsCache.has(ck))return creditsCache.get(ck);const cast=type==='movie'?await getMovieCredits(id):await getTVCredits(id);cachePut(creditsCache,ck,cast,CREDITS_CACHE_MAX);return cast;})()]);
     if(details.backdrop_path) modalHero.style.backgroundImage=`url(${backdropUrl(details.backdrop_path)})`;
     modalPoster.src=posterUrl(details.poster_path,'w342');
-    modalTitle.textContent=details.title||details.name||'';
-    const year=(details.release_date||details.first_air_date||'').slice(0,4),runtime=details.runtime?`${details.runtime}分钟`:'';
-    const genres=(details.genres||[]).map(g=>g.name).join(' / '),rating=details.vote_average?`★ ${details.vote_average.toFixed(1)}`:'';
-    modalMetaBar.innerHTML=[year,runtime,genres,rating].filter(Boolean).map(s=>`<span>${s}</span>`).join('');
+
+    const displayTitle=details.title||details.name||'';
+    const origTitle=details.original_title||details.original_name||'';
+    modalTitle.textContent=displayTitle;
+    modalOrigTitle.textContent=(origTitle&&origTitle!==displayTitle)?origTitle:'';
+
+    const year=(details.release_date||details.first_air_date||'').slice(0,4);
+    const runtime=details.runtime?`${details.runtime} 分钟`:(details.episode_run_time&&details.episode_run_time[0]?`${details.episode_run_time[0]} 分钟/集`:'');
+    const typeLabel=type==='movie'?'电影':'剧集';
+    modalMetaBar.innerHTML=[typeLabel,year,runtime].filter(Boolean).map(s=>`<span>${esc(s)}</span>`).join('');
+
+    const stats=[];
+    if(details.vote_average) stats.push({lbl:'评分',val:`★ ${details.vote_average.toFixed(1)}`,gold:true});
+    if(details.vote_count) stats.push({lbl:'评分人数',val:details.vote_count.toLocaleString()});
+    if(type==='movie'){
+      if(details.revenue) stats.push({lbl:'票房',val:`$${fmtMoney(details.revenue)}`});
+      if(details.budget) stats.push({lbl:'预算',val:`$${fmtMoney(details.budget)}`});
+    }else{
+      if(details.number_of_seasons) stats.push({lbl:'季数',val:`${details.number_of_seasons} 季`});
+      if(details.number_of_episodes) stats.push({lbl:'集数',val:`${details.number_of_episodes} 集`});
+    }
+    if(details.popularity) stats.push({lbl:'人气',val:Math.round(details.popularity).toLocaleString()});
+    modalStats.innerHTML=stats.map(s=>`<div class="stat"><span class="lbl">${esc(s.lbl)}</span><span class="val${s.gold?' gold':''}">${esc(String(s.val))}</span></div>`).join('');
+
+    modalGenres.innerHTML=(details.genres||[]).map(g=>`<span>${esc(g.name)}</span>`).join('');
     modalOverview.textContent=details.overview||'暂无简介';
+
     const topCast=(credits||[]).slice(0,30);
+    modalCastTitle.textContent=topCast.length?`演员表 · ${topCast.length} 人`:'演员表';
     modalCast.innerHTML=topCast.map(c=>`<button class="modal-cast-item" data-person-id="${c.id}" data-person-name="${esc(c.name)}" data-person-profile="${c.profile_path||''}">${c.profile_path?`<img class="cast-img" src="${profileUrl(c.profile_path)}" alt="${esc(c.name)}" loading="lazy">`:`<div class="cast-no-img">🎬</div>`}<div class="cast-name">${esc(c.name)}</div>${c.character?`<div class="cast-char">${esc(c.character)}</div>`:''}</button>`).join('');
     modalCast.querySelectorAll('.modal-cast-item').forEach(chip=>{addClickable(chip,()=>{const pid=parseInt(chip.dataset.personId),pname=chip.dataset.personName,pprofile=chip.dataset.personProfile;closeModal();selectActor({id:pid,name:pname,profile_path:pprofile,known_for_department:''});});});
   }catch(err){modalCast.innerHTML='<div class="modal-loading">加载失败</div>';showToast('加载电影详情失败');}
@@ -664,5 +439,3 @@ function renderGraphDetail(node){
     ? works.map(work => `<span class="graph-work-chip">${esc(work)}</span>`).join('')
     : '<span class="graph-work-chip">暂无共同作品标题</span>';
 }
-
-if(getApiKey())showApp();
