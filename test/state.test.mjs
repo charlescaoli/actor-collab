@@ -4,6 +4,10 @@ import assert from 'node:assert/strict';
 import {
   createLatestOnlyRunner,
   formatApiKeyError,
+  getCenterPull,
+  getEdgeStyle,
+  getEntranceProgress,
+  getFloatOffset,
   getGraphMetrics,
   getMobileOrbitPosition,
   getSharedWorkPreview,
@@ -102,4 +106,32 @@ test('getSharedWorkPreview returns compact shared work labels', () => {
   ];
 
   assert.deepEqual(getSharedWorkPreview(works, 2), ['花样年华 · 2000', '英雄 · 2002']);
+});
+
+test('getCenterPull ramps from 0.010 to 0.022 across settle frames', () => {
+  assert.ok(Math.abs(getCenterPull(0, 150) - 0.010) < 1e-9);
+  assert.ok(Math.abs(getCenterPull(150, 150) - 0.022) < 1e-9);
+  assert.ok(Math.abs(getCenterPull(75, 150) - 0.016) < 1e-9);
+  // clamps past settleFrames
+  assert.ok(Math.abs(getCenterPull(300, 150) - 0.022) < 1e-9);
+});
+
+test('getFloatOffset returns sinusoidal offset, larger when selected', () => {
+  const base = getFloatOffset(0, 0, 10, false);
+  assert.ok(Math.abs(base.dx - 0) < 1e-9);     // sin(0)*10
+  assert.ok(Math.abs(base.dy - 10) < 1e-9);    // cos(0)*10
+  const sel = getFloatOffset(0, 0, 10, true);
+  assert.ok(Math.abs(sel.dy - 14) < 1e-9);     // *1.4 boost
+});
+
+test('getEntranceProgress is eased 0..1 (ease-out cubic), clamped', () => {
+  assert.equal(getEntranceProgress(0, 500), 0);
+  assert.equal(getEntranceProgress(500, 500), 1);
+  assert.equal(getEntranceProgress(1000, 500), 1); // clamp
+  assert.ok(Math.abs(getEntranceProgress(250, 500) - 0.875) < 1e-9); // 1-(0.5)^3
+});
+
+test('getEdgeStyle gives gold for selected, faint otherwise', () => {
+  assert.deepEqual(getEdgeStyle(true), { strokeStyle: 'rgba(245,197,24,0.65)', lineWidth: 2 });
+  assert.deepEqual(getEdgeStyle(false), { strokeStyle: 'rgba(255,255,255,0.07)', lineWidth: 0.7 });
 });

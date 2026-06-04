@@ -121,3 +121,32 @@ export function getSharedWorkPreview(works = [], limit = 3) {
 export function getYearLabel(work = {}) {
   return (work.date || work.release_date || work.first_air_date || '').slice(0, 4) || '—';
 }
+
+// ── Graph motion / styling math (pure, tested) ──────────────
+
+// Entrance: center pull ramps up over the settle window so nodes overshoot then come home.
+export function getCenterPull(frame, settleFrames) {
+  return 0.010 + Math.min(frame / settleFrames, 1) * 0.012;
+}
+
+// Continuous float offset around a node's base position; selected drifts a bit more.
+export function getFloatOffset(t, phase, amp, selected = false) {
+  const boost = selected ? 1.4 : 1;
+  return {
+    dx: Math.sin(t * 0.9 + phase) * amp * boost,
+    dy: Math.cos(t * 0.75 + phase * 1.3) * amp * boost,
+  };
+}
+
+// Mobile entrance: eased 0..1 progress (ease-out cubic) for lerp + scale + alpha.
+export function getEntranceProgress(elapsedMs, durationMs) {
+  const p = Math.min(Math.max(elapsedMs / durationMs, 0), 1);
+  return 1 - Math.pow(1 - p, 3);
+}
+
+// Edge style: gold highlight for the selected node's edge, faint hairline otherwise.
+export function getEdgeStyle(isSelected) {
+  return isSelected
+    ? { strokeStyle: 'rgba(245,197,24,0.65)', lineWidth: 2 }
+    : { strokeStyle: 'rgba(255,255,255,0.07)', lineWidth: 0.7 };
+}
