@@ -1,5 +1,5 @@
 import { profileUrl } from './api.js';
-import { getGraphMetrics, getMobileOrbitPosition, getSharedWorkPreview } from './state.js';
+import { getGraphMetrics, getMobileOrbitPosition, getSharedWorkPreview, getEdgeStyle } from './state.js';
 
 export class ForceGraph {
   constructor(container, collabs, centerName, options = {}) {
@@ -132,15 +132,13 @@ export class ForceGraph {
   draw() {
     const { ctx, w, h, center, nodes, hovered } = this;
     ctx.clearRect(0, 0, w, h);
-    const pulse = this.isMobile ? (0.88 + Math.sin(performance.now() / 900) * 0.12) : 1;
 
     for (const n of nodes) {
       if (this.isMobile) this.updateFloatingPosition(n);
+      const { strokeStyle, lineWidth } = getEdgeStyle(n === this.selected);
       ctx.beginPath();
       ctx.moveTo(center.x, center.y); ctx.lineTo(n.x, n.y);
-      const dim = this.selected && n !== this.selected ? 0.42 : 1;
-      ctx.strokeStyle = `rgba(245,197,24,${(n === this.selected ? Math.min(0.86, n.edgeAlpha + 0.24) * pulse : n.edgeAlpha) * dim})`;
-      ctx.lineWidth = n === this.selected ? (n.edgeWidth + 1.4) * pulse : n.edgeWidth;
+      ctx.strokeStyle = strokeStyle; ctx.lineWidth = lineWidth;
       ctx.stroke();
     }
     for (const n of nodes) this.drawNode(n, n === hovered, n === this.selected);
@@ -160,70 +158,45 @@ export class ForceGraph {
 
   drawNode(n, highlighted, selected) {
     const { ctx } = this;
-    const x = n.x, y = n.y, r = highlighted || selected ? n.radius + 2 : n.radius;
-    const alpha = this.selected && !selected && !highlighted ? 0.55 : 1;
+    const active = highlighted || selected;
+    const x = n.x, y = n.y, r = active ? n.radius + 2 : n.radius;
+    const alpha = (this.selected && !active) ? 0.45 : 1;
 
-    // Avatar circle clip
+    // avatar (or letter fallback) clipped to circle
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.clip();
-
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.closePath(); ctx.clip();
     if (n.img && n.img.complete && n.img.naturalWidth > 0) {
-      // cover-style: scale to fill circle, center crop
       const iw = n.img.naturalWidth, ih = n.img.naturalHeight;
-      const scale = Math.max(2 * r / iw, 2 * r / ih);
-      const dw = iw * scale, dh = ih * scale;
-      ctx.drawImage(n.img, x - dw/2, y - dh/2, dw, dh);
+      const s = Math.max(2 * r / iw, 2 * r / ih);
+      ctx.drawImage(n.img, x - iw * s / 2, y - ih * s / 2, iw * s, ih * s);
     } else {
-      ctx.fillStyle = highlighted || selected ? '#f5c518' : 'rgba(210,215,235,0.85)';
+      ctx.fillStyle = active ? '#f5c518' : 'rgba(210,215,235,0.85)';
       ctx.fill();
-      ctx.fillStyle = highlighted || selected ? '#15151d' : '#fff';
-      ctx.font = 'bold 10px -apple-system, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(n.name.slice(0, 1), x, y + 3);
+      ctx.fillStyle = active ? '#15151d' : '#fff';
+      ctx.font = 'bold 11px -apple-system, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(n.name.slice(0, 1), x, y + 4);
     }
     ctx.restore();
 
-    // Border ring with subtle glow
+    // ring
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.strokeStyle = highlighted || selected ? '#f5c518' : 'rgba(255,255,255,0.2)';
-    ctx.lineWidth = highlighted || selected ? 2.2 : 1.4;
-    ctx.shadowColor = highlighted || selected ? 'rgba(245,197,24,0.5)' : 'rgba(255,255,255,0.08)';
-    ctx.shadowBlur = highlighted || selected ? 9 : 3;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = active ? '#f5c518' : 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = active ? 2.2 : 1.2;
+    if (active) { ctx.shadowColor = 'rgba(245,197,24,0.5)'; ctx.shadowBlur = 9; }
+    ctx.stroke(); ctx.shadowBlur = 0;
     ctx.restore();
 
-    if (!this.isMobile) {
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 10px -apple-system, sans-serif';
-      ctx.textAlign = 'center'; ctx.fillText(n.name.slice(0, 6), x, y + r + 13);
-      ctx.fillStyle = '#f5c518'; ctx.font = '8px -apple-system, sans-serif';
-      ctx.fillText(`${n.count} 次`, x, y + r + 25);
+    // label ONLY when hovered or selected (selected persists). Desktop only — mobile
+    // shows it for the selected node via the same `active` path when tapped.
+    if (active) {
+      ctx.fillStyle = '#fff'; ctx.font = 'bold 11px -apple-system, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(n.name.slice(0, 8), x, y + r + 15);
+      ctx.fillStyle = '#f5c518'; ctx.font = '9px -apple-system, sans-serif';
+      ctx.fillText(`合作 ${n.count} 次`, x, y + r + 28);
     }
-
-    if (!this.isMobile && (highlighted || selected)) {
-      const preview = getSharedWorkPreview(n.sharedWorks, 2);
-      const tipW = 138, tipH = preview.length ? 56 : 40;
-      const tipX = Math.max(6, Math.min(this.w - tipW - 6, x - tipW/2));
-      const tipY = Math.max(6, y - r - tipH - 12);
-      ctx.fillStyle = 'rgba(20,20,35,0.92)';
-      ctx.beginPath(); ctx.roundRect(tipX, tipY, tipW, tipH, 6); ctx.fill();
-      ctx.strokeStyle = 'rgba(245,197,24,0.4)'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.roundRect(tipX, tipY, tipW, tipH, 6); ctx.stroke();
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 8px -apple-system, sans-serif';
-      ctx.textAlign = 'center'; ctx.fillText(n.name, tipX + tipW/2, tipY + 14);
-      ctx.fillStyle = '#f5c518'; ctx.font = '7px -apple-system, sans-serif';
-      ctx.fillText(`合作 ${n.count} 次`, tipX + tipW/2, tipY + 27);
-      ctx.fillStyle = '#bdbdca';
-      preview.forEach((work, i) => ctx.fillText(work.slice(0, 18), tipX + tipW/2, tipY + 40 + i * 10));
-    }
-
   }
 
   updateFloatingPosition(n) {

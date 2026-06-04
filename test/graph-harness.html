@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-CN" style="color-scheme:dark">
+<head><meta charset="UTF-8"><title>graph harness</title>
+<style>
+  body{margin:0;background:#0a0a0f;font-family:-apple-system,sans-serif}
+  #gc{width:100%;height:560px;position:relative;overflow:hidden}
+  .bar{padding:8px 12px}.bar button{background:#1d1d28;color:#e8e8ef;border:1px solid #33333f;border-radius:6px;padding:6px 12px;cursor:pointer}
+</style></head>
+<body>
+<div class="bar"><button id="replay">↻ replay</button></div>
+<div id="gc"></div>
+<script type="module">
+import { ForceGraph } from '../js/graph.js';
+const names=[['梁朝伟',9],['张曼玉',7],['刘德华',6],['张国荣',6],['林青霞',5],['Tony',5],['王家卫',4],['Maggie',4],['周星驰',4],['巩俐',3],['Tom',3],['章子怡',3],['Andy',3],['吴镇宇',2],['Scar',2],['Brad',2],['金城武',2],['杨紫琼',2],['黄秋生',1],['Leslie',1]];
+const works=['花样年华','重庆森林','无间道','春光乍泄','东邪西毒','2046','阿飞正传','英雄'];
+function mk(){return names.map(([name,count],i)=>({id:i+1,name,count,profile_path:null,sharedWorks:Array.from({length:Math.min(count,5)},(_,k)=>({title:works[(i+k)%works.length],type:'movie',id:100+i*10+k,date:String(1990+((i+k)%20)),popularity:10-k}))}));}
+let g=new ForceGraph(document.getElementById('gc'),mk(),'中心演员',{selectedId:1});
+document.getElementById('replay').addEventListener('click',()=>{g.destroy();g=new ForceGraph(document.getElementById('gc'),mk(),'中心演员',{selectedId:1});});
+window.__g=g;
+</script>
+</body></html>
