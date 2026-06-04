@@ -1,5 +1,5 @@
 import { profileUrl } from './api.js';
-import { getGraphMetrics, getMobileOrbitPosition, getSharedWorkPreview, getEdgeStyle } from './state.js';
+import { getGraphMetrics, getMobileOrbitPosition, getSharedWorkPreview, getEdgeStyle, getCenterPull, getFloatOffset } from './state.js';
 
 export class ForceGraph {
   constructor(container, collabs, centerName, options = {}) {
@@ -10,12 +10,14 @@ export class ForceGraph {
 
     const sorted = [...collabs].sort((a, b) => b.count - a.count).slice(0, this.isMobile ? 12 : 30);
     this.maxCount = Math.max(...sorted.map(c => c.count), 1);
-    this.nodes = sorted.map(c => {
+    this.nodes = sorted.map((c, i) => {
       const metrics = getGraphMetrics(c.count, this.maxCount);
+      const ratio = c.count / this.maxCount;
       const n = {
         id: c.id, name: c.name, count: c.count, sharedWorks: c.sharedWorks,
-        radius: metrics.radius, edgeWidth: metrics.edgeWidth, edgeAlpha: metrics.edgeAlpha,
-        profile_path: c.profile_path, x: 0, y: 0, vx: 0, vy: 0, img: null
+        radius: metrics.radius, profile_path: c.profile_path,
+        floatAmp: 3.5 + ratio * 2.5, floatPhase: i * 0.7,
+        x: 0, y: 0, vx: 0, vy: 0, img: null
       };
       if (c.profile_path) {
         n.img = new Image();
@@ -31,7 +33,7 @@ export class ForceGraph {
     this.scale = 1; this.offset = { x: 0, y: 0 };
     this.dragging = null; this.hovered = null;
     this.selected = this.nodes.find(n => n.id === options.selectedId) || this.nodes[0] || null;
-    this.frameCount = 0; this.maxFrames = 120; this.destroyed = false;
+    this.frameCount = 0; this.maxFrames = 150; this.settled = false; this.destroyed = false;
 
     container.appendChild(this.canvas);
     this.resize();
@@ -67,17 +69,17 @@ export class ForceGraph {
       return;
     }
     for (const n of this.nodes) {
-      const angle = Math.random() * Math.PI * 2;
-      const r = 90 + Math.random() * Math.min(this.w, this.h) * 0.32;
-      n.x = this.center.x + Math.cos(angle) * r;
-      n.y = this.center.y + Math.sin(angle) * r;
+      n.x = this.center.x + (Math.random() - 0.5) * 8;
+      n.y = this.center.y + (Math.random() - 0.5) * 8;
+      n.vx = 0; n.vy = 0;
     }
   }
 
   reshuffle() {
     this.frameCount = 0;
+    this.settled = false;
     this.initNodes();
-    this.simulate();
+    if (!this._raf) this.simulate();
   }
 
   simulate() {
@@ -87,14 +89,24 @@ export class ForceGraph {
       this._raf = requestAnimationFrame(() => this.simulate());
       return;
     }
-    if (this.frameCount >= this.maxFrames) { this.draw(); return; }
+    if (this.settled) {
+      this.floatStep();
+      this.draw();
+      this._raf = requestAnimationFrame(() => this.simulate());
+      return;
+    }
 
-    const cp = 0.004, damping = 0.82;
+    const cp = getCenterPull(this.frameCount, this.maxFrames);
+    const damping = 0.86;
+    const maxOrbit = Math.min(this.w, this.h) * 0.42;
 
     for (const n of this.nodes) {
       if (n === this.dragging) continue;
       n.vx += (this.center.x - n.x) * cp;
       n.vy += (this.center.y - n.y) * cp;
+      const dcx = n.x - this.center.x, dcy = n.y - this.center.y;
+      const d = Math.hypot(dcx, dcy) || 1;
+      if (d > maxOrbit) { const k = (d - maxOrbit) * 0.05; n.vx -= dcx / d * k; n.vy -= dcy / d * k; }
     }
 
     for (let i = 0; i < this.nodes.length; i++) {
@@ -109,7 +121,7 @@ export class ForceGraph {
           a.vx -= nx * f * 0.5; a.vy -= ny * f * 0.5;
           b.vx += nx * f * 0.5; b.vy += ny * f * 0.5;
         }
-        const rf = 300 / (dist * dist);
+        const rf = 260 / (dist * dist);
         a.vx -= dx / dist * rf * 0.3; a.vy -= dy / dist * rf * 0.3;
         b.vx += dx / dist * rf * 0.3; b.vy += dy / dist * rf * 0.3;
       }
@@ -124,8 +136,20 @@ export class ForceGraph {
     }
 
     this.draw(); this.frameCount++;
-    if (this.frameCount < this.maxFrames) {
-      this._raf = requestAnimationFrame(() => this.simulate());
+    if (this.frameCount >= this.maxFrames) {
+      for (const n of this.nodes) { n.baseX = n.x; n.baseY = n.y; }
+      this.settled = true;
+    }
+    this._raf = requestAnimationFrame(() => this.simulate());
+  }
+
+  floatStep() {
+    const t = performance.now() / 1000;
+    for (const n of this.nodes) {
+      if (n === this.dragging) continue;
+      const o = getFloatOffset(t, n.floatPhase, n.floatAmp, n === this.selected);
+      n.x = n.baseX + o.dx;
+      n.y = n.baseY + o.dy;
     }
   }
 
@@ -216,7 +240,7 @@ export class ForceGraph {
 
   bindEvents() {
     this._onMouseDown = e => { const p = this.getPos(e); const h = this.hitTest(p.x,p.y); if (h?.type==='actor') { this.dragging=h.node; this.canvas.style.cursor='grabbing'; } };
-    this._onMouseMove = e => { const p = this.getPos(e); if (this.dragging) { this.dragging.x=p.x; this.dragging.y=p.y; this.dragging.vx=0; this.dragging.vy=0; this.draw(); } else { const h=this.hitTest(p.x,p.y); this.hovered=h?.type==='actor'?h.node:null; this.canvas.style.cursor=this.hovered?'pointer':''; this.draw(); } };
+    this._onMouseMove = e => { const p = this.getPos(e); if (this.dragging) { this.dragging.x=p.x; this.dragging.y=p.y; this.dragging.baseX=p.x; this.dragging.baseY=p.y; this.dragging.vx=0; this.dragging.vy=0; this.draw(); } else { const h=this.hitTest(p.x,p.y); this.hovered=h?.type==='actor'?h.node:null; this.canvas.style.cursor=this.hovered?'pointer':''; this.draw(); } };
     this._onMouseUp = () => { this.dragging=null; this.canvas.style.cursor=this.hovered?'pointer':''; };
     this._onClick = e => {
       const p=this.getPos(e); const h=this.hitTest(p.x,p.y);
