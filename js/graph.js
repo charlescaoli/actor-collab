@@ -1,5 +1,5 @@
 import { profileUrl } from './api.js';
-import { getGraphMetrics, getMobileOrbitPosition, getSharedWorkPreview, getEdgeStyle, getCenterPull, getFloatOffset } from './state.js';
+import { getGraphMetrics, getMobileOrbitPosition, getSharedWorkPreview, getEdgeStyle, getCenterPull, getFloatOffset, getEntranceProgress } from './state.js';
 
 export class ForceGraph {
   constructor(container, collabs, centerName, options = {}) {
@@ -56,15 +56,12 @@ export class ForceGraph {
 
   initNodes() {
     if (this.isMobile) {
+      this._enterStart = performance.now();
       for (let i = 0; i < this.nodes.length; i++) {
         const n = this.nodes[i];
         const pos = getMobileOrbitPosition(i, this.nodes.length, this.w, this.h, n.count, this.maxCount);
-        n.baseX = pos.x;
-        n.baseY = pos.y;
-        n.floatPhase = i * 0.7;
-        n.x = pos.x;
-        n.y = pos.y;
-        n.vx = 0; n.vy = 0;
+        n.baseX = pos.x; n.baseY = pos.y;          // orbit slot (float anchor)
+        n.x = this.center.x; n.y = this.center.y;  // start at center for scale-in
       }
       return;
     }
@@ -85,6 +82,16 @@ export class ForceGraph {
   simulate() {
     if (this.destroyed) return;
     if (this.isMobile) {
+      const elapsed = performance.now() - this._enterStart;
+      const p = getEntranceProgress(elapsed, 500);
+      this._enterScale = p; // consumed by drawNode
+      const t = performance.now() / 1000;
+      for (const n of this.nodes) {
+        if (n === this.dragging) continue;
+        const o = (p >= 1) ? getFloatOffset(t, n.floatPhase, n.floatAmp, n === this.selected) : { dx: 0, dy: 0 };
+        n.x = this.center.x + (n.baseX - this.center.x) * p + o.dx;
+        n.y = this.center.y + (n.baseY - this.center.y) * p + o.dy;
+      }
       this.draw();
       this._raf = requestAnimationFrame(() => this.simulate());
       return;
@@ -158,7 +165,6 @@ export class ForceGraph {
     ctx.clearRect(0, 0, w, h);
 
     for (const n of nodes) {
-      if (this.isMobile) this.updateFloatingPosition(n);
       const { strokeStyle, lineWidth } = getEdgeStyle(n === this.selected);
       ctx.beginPath();
       ctx.moveTo(center.x, center.y); ctx.lineTo(n.x, n.y);
@@ -183,12 +189,13 @@ export class ForceGraph {
   drawNode(n, highlighted, selected) {
     const { ctx } = this;
     const active = highlighted || selected;
-    const x = n.x, y = n.y, r = active ? n.radius + 2 : n.radius;
     const alpha = (this.selected && !active) ? 0.45 : 1;
+    const enter = (this.isMobile && this._enterScale != null) ? this._enterScale : 1;
+    const x = n.x, y = n.y, r = (active ? n.radius + 2 : n.radius) * (0.4 + 0.6 * enter);
 
     // avatar (or letter fallback) clipped to circle
     ctx.save();
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = alpha * enter;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.closePath(); ctx.clip();
     if (n.img && n.img.complete && n.img.naturalWidth > 0) {
       const iw = n.img.naturalWidth, ih = n.img.naturalHeight;
@@ -205,7 +212,7 @@ export class ForceGraph {
 
     // ring
     ctx.save();
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = alpha * enter;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.strokeStyle = active ? '#f5c518' : 'rgba(255,255,255,0.18)';
     ctx.lineWidth = active ? 2.2 : 1.2;
@@ -221,13 +228,6 @@ export class ForceGraph {
       ctx.fillStyle = '#f5c518'; ctx.font = '9px -apple-system, sans-serif';
       ctx.fillText(`合作 ${n.count} 次`, x, y + r + 28);
     }
-  }
-
-  updateFloatingPosition(n) {
-    const t = performance.now() / 1000;
-    const selectedBoost = n === this.selected ? 1.25 : 1;
-    n.x = n.baseX + Math.sin(t * 1.05 + n.floatPhase) * 5.5 * selectedBoost;
-    n.y = n.baseY + Math.cos(t * 0.9 + n.floatPhase * 1.3) * 4.5 * selectedBoost;
   }
 
   getPos(e) { const r = this.canvas.getBoundingClientRect(); return { x: (e.clientX-r.left)/this.scale, y: (e.clientY-r.top)/this.scale }; }
