@@ -351,6 +351,43 @@ bioToggle.addEventListener('click', () => {
   bioToggle.textContent = collapsed ? '展开全文 ▾' : '收起 ▴';
 });
 
+// Photo gallery lightbox
+function openLightbox(i) {
+  if (!currentPhotos.length) return;
+  lightboxIndex = (i + currentPhotos.length) % currentPhotos.length;
+  lightboxImg.src = profileUrl(currentPhotos[lightboxIndex], 'h632');
+  photoLightbox.classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+function closeLightbox() {
+  photoLightbox.classList.remove('show');
+  document.body.style.overflow = '';
+}
+function lightboxStep(d) { openLightbox(lightboxIndex + d); }
+
+bannerGallery.addEventListener('click', (e) => {
+  const img = e.target.closest('[data-photo-index]');
+  if (img) openLightbox(parseInt(img.dataset.photoIndex));
+});
+lightboxClose.addEventListener('click', closeLightbox);
+lightboxPrev.addEventListener('click', () => lightboxStep(-1));
+lightboxNext.addEventListener('click', () => lightboxStep(1));
+photoLightbox.addEventListener('click', (e) => { if (e.target === photoLightbox) closeLightbox(); });
+document.addEventListener('keydown', (e) => {
+  if (!photoLightbox.classList.contains('show')) return;
+  if (e.key === 'Escape') closeLightbox();
+  else if (e.key === 'ArrowLeft') lightboxStep(-1);
+  else if (e.key === 'ArrowRight') lightboxStep(1);
+});
+let lightboxTouchX = null;
+photoLightbox.addEventListener('touchstart', (e) => { lightboxTouchX = e.changedTouches[0].clientX; }, { passive: true });
+photoLightbox.addEventListener('touchend', (e) => {
+  if (lightboxTouchX == null) return;
+  const dx = e.changedTouches[0].clientX - lightboxTouchX;
+  lightboxTouchX = null;
+  if (Math.abs(dx) > 40) lightboxStep(dx < 0 ? 1 : -1);
+});
+
 // Back
 backBtn.addEventListener('click',()=>{
   selectGen++; // invalidate any in-flight actor load
