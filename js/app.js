@@ -20,6 +20,7 @@ import {
   createLatestOnlyRunner,
   formatAka,
   formatApiKeyError,
+  localizeDepartment,
   getActiveYears,
   getSharedWorkPreview,
   getYearLabel,
@@ -187,7 +188,7 @@ function renderSearchResults(results) {
   results.slice(0, 8).forEach(person => {
     const div = document.createElement('div'); div.className = 'search-result-item';
     const kf = (person.known_for||[]).slice(0,3).map(m=>m.title||m.name).join(', ');
-    div.innerHTML = `${person.profile_path?`<img src="${profileUrl(person.profile_path)}" alt="" loading="lazy">`:`<div class="no-avatar">🎬</div>`}<div class="info"><h3>${esc(person.name)}</h3><span>${person.known_for_department||''}${kf?' · '+kf:''}</span></div>`;
+    div.innerHTML = `${person.profile_path?`<img src="${profileUrl(person.profile_path)}" alt="" loading="lazy">`:`<div class="no-avatar">🎬</div>`}<div class="info"><h3>${esc(person.name)}</h3><span>${esc(localizeDepartment(person.known_for_department))}${kf?' · '+kf:''}</span></div>`;
     addClickable(div, ()=>selectActor(person));
     searchResults.appendChild(div);
   });
@@ -209,7 +210,7 @@ async function selectActor(person) {
   if (currentGraph) { currentGraph.destroy(); currentGraph = null; }
   searchResults.classList.remove('show'); searchInput.value = '';
   bannerAvatar.src = profileUrl(person.profile_path); bannerAvatar.alt = person.name;
-  bannerName.textContent = person.name; bannerDetails.textContent = person.known_for_department || '';
+  bannerName.textContent = person.name; bannerDetails.textContent = localizeDepartment(person.known_for_department);
   bannerAka.hidden = true; bannerStats.innerHTML = ''; bioToggle.hidden = true;
   bannerGallery.innerHTML = ''; bannerGallery.hidden = true; currentPhotos = [];
   bannerTopMovies.innerHTML = ''; actorBanner.classList.add('show'); landingState.style.display = 'none';
@@ -227,8 +228,8 @@ async function selectActor(person) {
     bannerDetails.textContent = [
       details.birthday ? `🎂 ${details.birthday}${ageStr}` : '',
       details.place_of_birth ? `📍 ${details.place_of_birth}` : '',
-      details.known_for_department ? `🎭 ${details.known_for_department}` : ''
-    ].filter(Boolean).join('  ·  ') || person.known_for_department || '';
+      details.known_for_department ? `🎭 ${localizeDepartment(details.known_for_department)}` : ''
+    ].filter(Boolean).join('  ·  ') || localizeDepartment(person.known_for_department) || '';
 
     const aka = formatAka(details.also_known_as || [], 3);
     bannerAka.textContent = aka ? `别名：${aka}` : '';
@@ -243,7 +244,7 @@ async function selectActor(person) {
     bannerStats.innerHTML = [
       { lbl: '作品', val: `${totalWorks} 部`, gold: true },
       { lbl: '活跃年份', val: activeStr },
-      details.known_for_department ? { lbl: '代表领域', val: details.known_for_department } : null,
+      details.known_for_department ? { lbl: '代表领域', val: localizeDepartment(details.known_for_department) } : null,
       details.popularity ? { lbl: '人气', val: Math.round(details.popularity).toLocaleString() } : null
     ].filter(Boolean).map(s => `<div class="stat"><span class="lbl">${esc(s.lbl)}</span><span class="val${s.gold ? ' gold' : ''}">${esc(String(s.val))}</span></div>`).join('');
 

@@ -6,6 +6,7 @@ import {
   createLatestOnlyRunner,
   formatAka,
   formatApiKeyError,
+  localizeDepartment,
   getActiveYears,
   getCenterPull,
   getEdgeStyle,
@@ -165,4 +166,13 @@ test('getActiveYears: empty credits -> nulls', () => {
 test('formatAka: joins up to limit with 、', () => {
   assert.equal(formatAka(['A', 'B', 'C', 'D'], 3), 'A、B、C');
   assert.equal(formatAka([]), '');
+});
+
+test('localizeDepartment: maps known TMDB values to Chinese, passes unknown through', () => {
+  assert.equal(localizeDepartment('Acting'), '演员');
+  assert.equal(localizeDepartment('Directing'), '导演');
+  assert.equal(localizeDepartment('Costume & Make-Up'), '服装造型');
+  assert.equal(localizeDepartment('SomeNewDept'), 'SomeNewDept'); // pass-through
+  assert.equal(localizeDepartment(''), '');
+  assert.equal(localizeDepartment(), '');
 });

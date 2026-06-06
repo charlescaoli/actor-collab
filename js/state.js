@@ -180,3 +180,16 @@ export function getActiveYears(movieCredits = [], tvCredits = []) {
 export function formatAka(alsoKnownAs = [], limit = 3) {
   return alsoKnownAs.slice(0, limit).join('、');
 }
+
+// TMDB known_for_department is English even with language=zh-CN. Localize to Chinese;
+// unknown values pass through unchanged so future TMDB additions don't break the UI.
+const DEPARTMENT_ZH = {
+  Acting: '演员', Directing: '导演', Writing: '编剧', Production: '制片',
+  Camera: '摄影', Editing: '剪辑', Sound: '音效', Art: '美术',
+  'Costume & Make-Up': '服装造型', 'Visual Effects': '视觉特效',
+  Lighting: '灯光', Crew: '剧组', Creator: '主创',
+};
+export function localizeDepartment(department = '') {
+  if (!department) return '';
+  return DEPARTMENT_ZH[department] || department;
+}
