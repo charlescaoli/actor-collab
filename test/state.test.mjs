@@ -2,8 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  computeAge,
   createLatestOnlyRunner,
+  formatAka,
   formatApiKeyError,
+  getActiveYears,
   getCenterPull,
   getEdgeStyle,
   getEntranceProgress,
@@ -134,4 +137,32 @@ test('getEntranceProgress is eased 0..1 (ease-out cubic), clamped', () => {
 test('getEdgeStyle gives gold for selected, faint otherwise', () => {
   assert.deepEqual(getEdgeStyle(true), { strokeStyle: 'rgba(245,197,24,0.65)', lineWidth: 2 });
   assert.deepEqual(getEdgeStyle(false), { strokeStyle: 'rgba(255,255,255,0.07)', lineWidth: 0.7 });
+});
+
+test('computeAge: living person uses now, respects birthday not yet reached', () => {
+  assert.deepEqual(computeAge('1956-07-09', null, new Date('2026-06-06')), { age: 69, deceased: false });
+});
+
+test('computeAge: deceased uses deathday for 享年', () => {
+  assert.deepEqual(computeAge('1918-08-25', '1990-10-14'), { age: 72, deceased: true });
+});
+
+test('computeAge: missing birthday returns null age', () => {
+  assert.equal(computeAge('', null).age, null);
+});
+
+test('getActiveYears: earliest and latest year across movie+tv credits', () => {
+  assert.deepEqual(
+    getActiveYears([{ release_date: '1994-07-06' }], [{ first_air_date: '2026-01-01' }]),
+    { first: '1994', last: '2026' }
+  );
+});
+
+test('getActiveYears: empty credits -> nulls', () => {
+  assert.deepEqual(getActiveYears([], []), { first: null, last: null });
+});
+
+test('formatAka: joins up to limit with 、', () => {
+  assert.equal(formatAka(['A', 'B', 'C', 'D'], 3), 'A、B、C');
+  assert.equal(formatAka([]), '');
 });

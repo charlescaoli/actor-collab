@@ -150,3 +150,33 @@ export function getEdgeStyle(isSelected) {
     ? { strokeStyle: 'rgba(245,197,24,0.65)', lineWidth: 2 }
     : { strokeStyle: 'rgba(255,255,255,0.07)', lineWidth: 0.7 };
 }
+
+// ── Actor detail helpers (pure, tested) ──────────────
+
+// Age from birthday to deathday (享年) or now. UTC accessors keep it timezone-stable.
+export function computeAge(birthday, deathday = null, now = new Date()) {
+  const deceased = !!deathday;
+  if (!birthday) return { age: null, deceased };
+  const start = new Date(birthday);
+  const end = deathday ? new Date(deathday) : now;
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return { age: null, deceased };
+  let age = end.getUTCFullYear() - start.getUTCFullYear();
+  const m = end.getUTCMonth() - start.getUTCMonth();
+  if (m < 0 || (m === 0 && end.getUTCDate() < start.getUTCDate())) age--;
+  return { age, deceased };
+}
+
+// Earliest and latest 4-digit year across movie (release_date) and tv (first_air_date) credits.
+export function getActiveYears(movieCredits = [], tvCredits = []) {
+  const years = [];
+  for (const m of movieCredits) { const y = (m.release_date || '').slice(0, 4); if (/^\d{4}$/.test(y)) years.push(y); }
+  for (const t of tvCredits) { const y = (t.first_air_date || '').slice(0, 4); if (/^\d{4}$/.test(y)) years.push(y); }
+  if (!years.length) return { first: null, last: null };
+  years.sort();
+  return { first: years[0], last: years[years.length - 1] };
+}
+
+// First `limit` aliases joined by 、 (empty array -> '').
+export function formatAka(alsoKnownAs = [], limit = 3) {
+  return alsoKnownAs.slice(0, limit).join('、');
+}
