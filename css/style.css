@@ -155,6 +155,7 @@ body::after {
 
 @media (max-width: 600px) {
   .actor-banner { flex-direction: column; align-items: center; text-align: center; }
+  .actor-banner .info { width: 100%; }  /* column cross-axis: bound width so the gallery scrolls instead of overflowing */
   .banner-actions { flex-direction: row; }
   .actor-banner .top-movies { justify-content: center; }
 }
