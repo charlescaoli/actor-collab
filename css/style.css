@@ -189,11 +189,22 @@ body::after {
 .graph-detail-kicker { color: var(--accent); font-size: 0.72rem; font-weight: 700; margin-bottom: 4px; }
 .graph-detail h3 { font-size: 1rem; margin-bottom: 2px; }
 .graph-detail p { color: var(--text-secondary); font-size: 0.78rem; margin-bottom: 8px; }
-.graph-shared-works { display: flex; flex-wrap: wrap; gap: 6px; }
-.graph-work-chip {
-  padding: 5px 8px; border: 1px solid rgba(255,255,255,0.08); border-radius: 7px;
-  background: rgba(255,255,255,0.04); color: #c9c9d4; font-size: 0.72rem;
-}
+#graphDetailName { display: flex; align-items: center; gap: 12px; }
+.graph-detail-avatar { width: 52px; height: 52px; border-radius: 50%; object-fit: cover;
+  flex-shrink: 0; border: 1.5px solid rgba(245,197,24,0.5); background: #2a2a3a; }
+.graph-detail-avatar.no-avatar { display: flex; align-items: center; justify-content: center; font-size: 1.3rem; }
+.graph-detail-who { display: flex; flex-direction: column; gap: 2px; }
+.graph-detail-who strong { font-size: 1rem; color: #fff; }
+.graph-detail-who em { font-style: normal; font-size: 0.78rem; color: var(--text-secondary); }
+.graph-shared-works { display: flex; gap: 10px; flex-wrap: nowrap; overflow-x: auto; margin-top: 4px; }
+.graph-work-card { width: 64px; flex: 0 0 auto; cursor: pointer; }
+.graph-work-poster { width: 64px; height: 96px; border-radius: 6px; object-fit: cover;
+  background: #23232e; border: 1px solid #30303f; display: block; }
+.graph-work-poster.no-poster { display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+.graph-work-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; font-size: 0.64rem; color: #ccc; margin-top: 4px; line-height: 1.25; }
+.graph-work-rev { display: block; font-size: 0.6rem; color: #f5c518; margin-top: 1px; }
+.graph-work-empty { font-size: 0.74rem; color: var(--text-secondary); }
 .graph-jump-btn { height: 34px; padding: 0 14px; font-size: 0.8rem; font-weight: 700; }
 @media (max-width: 600px) {
   .graph-actions { align-items: flex-start; }
@@ -209,8 +220,10 @@ body::after {
     margin: 0 auto 8px; display: block;
   }
   .graph-detail-kicker { display: none; }
-  .graph-shared-works { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
-  .graph-work-chip { flex: 0 0 auto; }
+  .graph-shared-works { padding-bottom: 2px; }
+  .graph-detail-avatar { width: 44px; height: 44px; }
+  .graph-work-card { width: 56px; }
+  .graph-work-poster { width: 56px; height: 84px; }
   .graph-jump-btn { width: 100%; }
 }
 

@@ -86,11 +86,13 @@ let toastTimer;
 let selectGen = 0; // bumped on every selectActor call to discard stale async results
 const creditsCache = new Map();
 const collabCache = new Map();
+const movieDetailsCache = new Map();
 const searchRunner = createLatestOnlyRunner();
 
 // Bounded LRU-ish cache: re-insert on access, evict oldest when over limit
 const CREDITS_CACHE_MAX = 300;
 const COLLAB_CACHE_MAX = 60;
+const MOVIE_DETAILS_CACHE_MAX = 120;
 function cachePut(map, key, value, max) {
   if (map.has(key)) map.delete(key);
   map.set(key, value);
@@ -432,10 +434,40 @@ function renderGraph(){
 function renderGraphDetail(node){
   currentGraphSelection = node;
   graphTrail.innerHTML = `<span class="crumb">${esc(currentActor.name)}</span><span>→</span><span class="crumb">${esc(node.name)}</span>`;
-  graphDetailName.textContent = node.name;
-  graphDetailMeta.textContent = `与 ${currentActor.name} 合作 ${node.count} 次`;
-  const works = getSharedWorkPreview(node.sharedWorks, 4);
+
+  // header: actor photo + name + meta
+  const avatar = node.profile_path
+    ? `<img class="graph-detail-avatar" src="${profileUrl(node.profile_path,'w185')}" alt="${esc(node.name)}">`
+    : `<div class="graph-detail-avatar no-avatar">🎬</div>`;
+  graphDetailName.innerHTML = `${avatar}<span class="graph-detail-who"><strong>${esc(node.name)}</strong><em>与 ${esc(currentActor.name)} 合作 ${node.count} 次</em></span>`;
+  graphDetailMeta.textContent = '';
+
+  // shared works as poster cards (clickable -> movie modal). Revenue filled in async.
+  const works = (node.sharedWorks || []).slice(0, 6);
   graphSharedWorks.innerHTML = works.length
-    ? works.map(work => `<span class="graph-work-chip">${esc(work)}</span>`).join('')
-    : '<span class="graph-work-chip">暂无共同作品标题</span>';
+    ? works.map(w => `
+      <div class="graph-work-card" data-movie-type="${w.type}" data-movie-id="${w.id}">
+        ${w.poster_path
+          ? `<img class="graph-work-poster" src="${posterUrl(w.poster_path,'w92')}" alt="${esc(w.title)}" loading="lazy">`
+          : `<div class="graph-work-poster no-poster">🎬</div>`}
+        <span class="graph-work-name">${esc(w.title)}</span>
+        <span class="graph-work-rev" data-rev-for="${w.type}-${w.id}">${getYearLabel(w)}</span>
+      </div>`).join('')
+    : '<span class="graph-work-empty">暂无共同作品</span>';
+
+  fillSharedWorkRevenue(node, works);
+}
+
+// Fetch revenue for movie works on demand; only write back if this node is still selected.
+async function fillSharedWorkRevenue(node, works){
+  for (const w of works) {
+    if (w.type !== 'movie') continue;
+    try {
+      let details = movieDetailsCache.get(w.id);
+      if (!details) { details = await getMovieDetails(w.id); cachePut(movieDetailsCache, w.id, details, MOVIE_DETAILS_CACHE_MAX); }
+      if (currentGraphSelection !== node) return; // selection changed — stop
+      const el = graphSharedWorks.querySelector(`[data-rev-for="movie-${w.id}"]`);
+      if (el && details.revenue) el.textContent = `$${fmtMoney(details.revenue)} · ${getYearLabel(w)}`;
+    } catch { /* leave year-only on failure */ }
+  }
 }
