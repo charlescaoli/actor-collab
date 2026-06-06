@@ -16,8 +16,11 @@ import {
 } from './api.js';
 
 import {
+  computeAge,
   createLatestOnlyRunner,
+  formatAka,
   formatApiKeyError,
+  getActiveYears,
   getSharedWorkPreview,
   getYearLabel,
   normalizeWorks,
@@ -45,6 +48,15 @@ const bannerName    = document.getElementById('bannerName');
 const bannerDetails = document.getElementById('bannerDetails');
 const bannerTopMovies = document.getElementById('bannerTopMovies');
 const bannerBio     = document.getElementById('bannerBio');
+const bannerAka     = document.getElementById('bannerAka');
+const bannerStats   = document.getElementById('bannerStats');
+const bioToggle     = document.getElementById('bioToggle');
+const bannerGallery = document.getElementById('bannerGallery');
+const photoLightbox = document.getElementById('photoLightbox');
+const lightboxImg   = document.getElementById('lightboxImg');
+const lightboxClose = document.getElementById('lightboxClose');
+const lightboxPrev  = document.getElementById('lightboxPrev');
+const lightboxNext  = document.getElementById('lightboxNext');
 const backBtn       = document.getElementById('backBtn');
 const graphToggleBtn = document.getElementById('graphToggleBtn');
 const graphActions = document.getElementById('graphActions');
@@ -84,6 +96,8 @@ let currentGraph = null;
 let currentGraphSelection = null;
 let toastTimer;
 let selectGen = 0; // bumped on every selectActor call to discard stale async results
+let currentPhotos = [];   // file_path[] for the lightbox
+let lightboxIndex = 0;
 const creditsCache = new Map();
 const collabCache = new Map();
 const movieDetailsCache = new Map();
@@ -196,6 +210,8 @@ async function selectActor(person) {
   searchResults.classList.remove('show'); searchInput.value = '';
   bannerAvatar.src = profileUrl(person.profile_path); bannerAvatar.alt = person.name;
   bannerName.textContent = person.name; bannerDetails.textContent = person.known_for_department || '';
+  bannerAka.hidden = true; bannerStats.innerHTML = ''; bioToggle.hidden = true;
+  bannerGallery.innerHTML = ''; bannerGallery.hidden = true; currentPhotos = [];
   bannerTopMovies.innerHTML = ''; actorBanner.classList.add('show'); landingState.style.display = 'none';
   collabSection.classList.remove('show'); hideGraphView();
   graphToggleBtn.classList.remove('active'); graphToggleBtn.textContent = '🔗 关系图';
@@ -206,8 +222,42 @@ async function selectActor(person) {
       getPersonDetails(person.id), getPersonMovieCredits(person.id), getPersonTVCredits(person.id)
     ]);
     if (token !== selectGen) return;
-    bannerDetails.textContent = [details.birthday?`🎂 ${details.birthday}`:'', details.place_of_birth?`📍 ${details.place_of_birth}`:''].filter(Boolean).join('  ·  ')||person.known_for_department||'';
-    bannerBio.textContent = details.biography ? details.biography.slice(0,150).replace(/\n/g,' ')+(details.biography.length>150?'…':'') : '';
+    const { age, deceased } = computeAge(details.birthday, details.deathday);
+    const ageStr = age != null ? (deceased ? `（享年 ${age} 岁）` : `（${age} 岁）`) : '';
+    bannerDetails.textContent = [
+      details.birthday ? `🎂 ${details.birthday}${ageStr}` : '',
+      details.place_of_birth ? `📍 ${details.place_of_birth}` : '',
+      details.known_for_department ? `🎭 ${details.known_for_department}` : ''
+    ].filter(Boolean).join('  ·  ') || person.known_for_department || '';
+
+    const aka = formatAka(details.also_known_as || [], 3);
+    bannerAka.textContent = aka ? `别名：${aka}` : '';
+    bannerAka.hidden = !aka;
+
+    const totalWorks = normalizeWorks(movieCredits, tvCredits).length;
+    const years = getActiveYears(movieCredits, tvCredits);
+    const birthYear = (details.birthday || '').slice(0, 4);
+    let firstYear = years.first;
+    if (firstYear && birthYear && firstYear < birthYear) firstYear = birthYear; // ignore pre-birth archival credits
+    const activeStr = firstYear ? (firstYear === years.last ? firstYear : `${firstYear} – ${years.last}`) : '—';
+    bannerStats.innerHTML = [
+      { lbl: '作品', val: `${totalWorks} 部`, gold: true },
+      { lbl: '活跃年份', val: activeStr },
+      details.known_for_department ? { lbl: '代表领域', val: details.known_for_department } : null,
+      details.popularity ? { lbl: '人气', val: Math.round(details.popularity).toLocaleString() } : null
+    ].filter(Boolean).map(s => `<div class="stat"><span class="lbl">${esc(s.lbl)}</span><span class="val${s.gold ? ' gold' : ''}">${esc(String(s.val))}</span></div>`).join('');
+
+    const bioText = (details.biography || '').trim();
+    bannerBio.textContent = bioText || '暂无简介';
+    bannerBio.classList.add('collapsed');
+    bioToggle.hidden = !bioText || bioText.length < 80;
+    bioToggle.textContent = '展开全文 ▾';
+
+    const profiles = (details.images && details.images.profiles) ? details.images.profiles.slice(0, 12) : [];
+    currentPhotos = profiles.map(p => p.file_path);
+    bannerGallery.innerHTML = currentPhotos
+      .map((fp, i) => `<img class="gallery-shot" src="${profileUrl(fp, 'w185')}" alt="" loading="lazy" data-photo-index="${i}">`).join('');
+    bannerGallery.hidden = !currentPhotos.length;
 
     const uniqueCredits = normalizeWorks(movieCredits, tvCredits);
     bannerTopMovies.innerHTML = '<div class="top-movie-loading">正在加载票房作品…</div>';
@@ -294,6 +344,12 @@ function renderCollaborations(collabs, actorName) {
   });
   collabSection.classList.add('show');
 }
+
+// Bio expand/collapse
+bioToggle.addEventListener('click', () => {
+  const collapsed = bannerBio.classList.toggle('collapsed');
+  bioToggle.textContent = collapsed ? '展开全文 ▾' : '收起 ▴';
+});
 
 // Back
 backBtn.addEventListener('click',()=>{

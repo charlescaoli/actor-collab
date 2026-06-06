@@ -36,7 +36,7 @@ export async function searchPerson(query) {
 }
 
 export async function getPersonDetails(id) {
-  return fetchTMDB(`/person/${id}`);
+  return fetchTMDB(`/person/${id}`, { append_to_response: 'images' });
 }
 
 export async function getPersonMovieCredits(id) {
